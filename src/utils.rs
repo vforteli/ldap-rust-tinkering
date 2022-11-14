@@ -1,5 +1,10 @@
 use byteorder::{BigEndian, ByteOrder};
 
+pub struct BerLengthResult {
+    value: i32,
+    bytes_consumed: usize,
+}
+
 pub fn int_to_ber_length(value: i32) -> Vec<u8> {
     if value <= 127 {
         [value as u8].to_vec()
@@ -13,86 +18,67 @@ pub fn int_to_ber_length(value: i32) -> Vec<u8> {
     }
 }
 
-/*
+/// Convert ber length bytes to i32 and how many bytes were used
+pub fn ber_length_to_i32(ber_length_bytes: Vec<u8>) -> BerLengthResult {
+    let short_length = ber_length_bytes[0] & 127;
 
-/// <summary>
-        /// Convert integer length to a byte array with BER encoding
-        /// https://en.wikipedia.org/wiki/X.690#BER_encoding
-        /// </summary>
-        /// <param name="length"></param>
-        /// <returns></returns>
-        public static byte[] IntToBerLength(int length)
-        {
-            // Short notation
-            if (length <= 127)
-            {
-                return new byte[] { (byte)length };
-            }
-            // Long notation
-            else
-            {
-                var intbytes = BitConverter.GetBytes(length);
-                Array.Reverse(intbytes);
+    match ber_length_bytes[0] >> 7 {
+        1 => {
+            let length_bytes = &ber_length_bytes[1..(short_length + 1).into()];
+            let mut long_length_bytes: [u8; 4] = [0; 4];
+            long_length_bytes[..short_length.into()].copy_from_slice(&length_bytes);
 
-                byte intbyteslength = (byte)intbytes.Length;
-
-
-                var lengthByte = intbyteslength + 128;
-                var berBytes = new byte[1 + intbyteslength];
-                berBytes[0] = (byte)lengthByte;
-                Buffer.BlockCopy(intbytes, 0, berBytes, 1, intbyteslength);
-                return berBytes;
+            BerLengthResult {
+                bytes_consumed: (1 + short_length).into(),
+                value: BigEndian::read_i32(&long_length_bytes),
             }
         }
-
-
-        /// <summary>
-        /// Convert BER encoded length at offset to an integer
-        /// </summary>
-        /// <param name="bytes">Byte array</param>
-        /// <param name="offset">Offset where the BER encoded length is located</param>
-        /// <param name="berByteCount">Number of bytes used to represent BER encoded length</param>
-        /// <returns></returns>
-        public static int BerLengthToInt(byte[] bytes, int offset, out int berByteCount)
-        {
-            var stream = new MemoryStream(bytes, offset, bytes.Length - offset, false);
-            return BerLengthToInt(stream, out berByteCount);
-        }
-
-
-        /// <summary>
-        /// Get a BER length from a stream
-        /// </summary>
-        /// <param name="stream">Stream at position where BER length should be found</param>
-        /// <param name="berByteCount">Number of bytes used to represent BER encoded length</param>
-        /// <returns></returns>
-        public static int BerLengthToInt(Stream stream, out int berByteCount)
-        {
-            berByteCount = 1;   // The minimum length of a ber encoded length is 1 byte
-            int attributeLength = 0;
-            var berByte = new byte[1];
-            stream.Read(berByte, 0, 1);
-            if (berByte[0] >> 7 == 1)    // Long notation, first byte tells us how many bytes are used for the length
-            {
-                var lengthoflengthbytes = berByte[0] & 127;
-                var lengthBytes = new byte[lengthoflengthbytes];
-                stream.Read(lengthBytes, 0, lengthoflengthbytes);
-                Array.Reverse(lengthBytes);
-                Array.Resize(ref lengthBytes, 4);   // this will of course explode if length is larger than a 32 bit integer
-                attributeLength = BitConverter.ToInt32(lengthBytes, 0);
-                berByteCount += lengthoflengthbytes;
-            }
-            else // Short notation, length contained in the first byte
-            {
-                attributeLength = berByte[0] & 127;
-            }
-
-            return attributeLength;
-        }*/
+        _ => BerLengthResult {
+            bytes_consumed: 1,
+            value: short_length.into(),
+        },
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_ber_length_to_i32_short_01() {
+        test_ber_length_to_i32("01", 1, 1)
+    }
+
+    #[test]
+    fn test_ber_length_to_i32_short_02() {
+        test_ber_length_to_i32("7f", 127, 1)
+    }
+
+    #[test]
+    fn test_ber_length_to_i32_01() {
+        test_ber_length_to_i32("8400000159", 345, 5)
+    }
+
+    #[test]
+    fn test_ber_length_to_i32_02() {
+        test_ber_length_to_i32("840000014f", 335, 5)
+    }
+
+    #[test]
+    fn test_ber_length_to_i32_03() {
+        test_ber_length_to_i32("840000012b", 299, 5)
+    }
+    #[test]
+    fn test_ber_length_to_i32_04() {
+        test_ber_length_to_i32("847fffffff", i32::MAX, 5)
+    }
+
+    fn test_ber_length_to_i32(hex_bytes: &str, expected_i32: i32, bytes_used: usize) {
+        let actual = ber_length_to_i32(hex::decode(hex_bytes).unwrap());
+
+        assert_eq!(actual.value, expected_i32);
+        assert_eq!(actual.bytes_consumed, bytes_used);
+    }
 
     #[test]
     fn test_int_to_ber_length_short_01() {
@@ -122,6 +108,11 @@ mod tests {
     #[test]
     fn test_int_to_ber_length_long_04() {
         test_int_to_ber_length(299, "840000012b");
+    }
+
+    #[test]
+    fn test_int_to_ber_length_long_05() {
+        test_int_to_ber_length(i32::MAX, "847fffffff");
     }
 
     fn test_int_to_ber_length(int_value: i32, expected_hex_string: &str) {
