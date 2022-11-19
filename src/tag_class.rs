@@ -6,3 +6,15 @@ pub enum TagClass {
     Context = 2,
     Private = 3,
 }
+
+impl From<u8> for TagClass {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::Universal,
+            1 => Self::Application,
+            2 => Self::Context,
+            3 => Self::Private,
+            _ => panic!("lulz"),
+        }
+    }
+}

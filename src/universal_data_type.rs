@@ -34,3 +34,42 @@ pub enum UniversalDataType {
     CharacterString = 29,
     BMPString = 30,
 }
+
+impl From<u8> for UniversalDataType {
+    fn from(value: u8) -> Self {
+        match value {
+            0 => Self::EndOfContent,
+            1 => Self::Boolean,
+            2 => Self::Integer,
+            3 => Self::BitString,
+            4 => Self::OctetString,
+            5 => Self::Null,
+            6 => Self::ObjectIdentifier,
+            7 => Self::ObjectDescriptor,
+            8 => Self::External,
+            9 => Self::Real,
+            10 => Self::Enumerated,
+            11 => Self::EmbeddedPDV,
+            12 => Self::UTF8String,
+            13 => Self::Relative,
+            14 => Self::Reserved,
+            15 => Self::Reserved2,
+            16 => Self::Sequence,
+            17 => Self::Set,
+            18 => Self::NumericString,
+            19 => Self::PrintableString,
+            20 => Self::T61String,
+            21 => Self::VideotexString,
+            22 => Self::IA5String,
+            23 => Self::UTCTime,
+            24 => Self::GeneralizedTime,
+            25 => Self::GraphicString,
+            26 => Self::VisibleString,
+            27 => Self::GeneralString,
+            28 => Self::UniversalString,
+            29 => Self::CharacterString,
+            30 => Self::BMPString,
+            _ => panic!("lulz"),
+        }
+    }
+}
