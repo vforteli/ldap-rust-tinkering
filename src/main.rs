@@ -1,3 +1,4 @@
+pub mod ldap_attribute;
 pub mod ldap_filter_choice;
 pub mod ldap_operation;
 pub mod ldap_result;
