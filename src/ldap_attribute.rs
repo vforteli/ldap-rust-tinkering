@@ -1,32 +1,51 @@
-use crate::tag::Tag;
+use crate::{tag::Tag, utils};
 
 pub struct LdapAttribute {
     tag: Tag,
     value: Option<Vec<u8>>,
+    child_attributes: Vec<LdapAttribute>,
 }
 
 impl LdapAttribute {
     pub fn new(tag: Tag, value: Option<Vec<u8>>) -> Self {
-        Self { tag, value }
+        Self {
+            tag,
+            value,
+            child_attributes: Vec::new(),
+        }
     }
 
     pub fn get_bytes(self) -> Vec<u8> {
-        // todo make this recursive
+        let mut attribute_bytes: Vec<u8> = Vec::new();
 
-        let mut bytes: Vec<u8> = Vec::new();
+        self.get_bytes_recursive(&mut attribute_bytes);
+
+        attribute_bytes
+    }
+
+    fn get_bytes_recursive(self, attribute_bytes: &mut Vec<u8>) {
+        // argh, probably need to make this safer, ie typed tag types etc, ensuring only constructed attributes can have child attributes etc
         let tag_byte: u8 = self.tag.into();
+        let mut content_bytes: Vec<u8> = Vec::new();
 
-        bytes.extend([tag_byte]);
+        attribute_bytes.extend([tag_byte]);
 
-        match self.value {
-            Some(v) => {
-                bytes.extend([v.len() as u8].to_vec());
-                bytes.extend(v)
+        if self.child_attributes.len() > 0 {
+            for child_attribute in self.child_attributes {
+                content_bytes.extend(child_attribute.get_bytes());
             }
-            None => (),
-        }
 
-        bytes
+            attribute_bytes.extend(utils::int_to_ber_length(content_bytes.len() as i32));
+            attribute_bytes.extend(content_bytes)
+        } else {
+            match self.value {
+                Some(v) => {
+                    attribute_bytes.extend(utils::int_to_ber_length(v.len() as i32));
+                    attribute_bytes.extend(v)
+                }
+                None => attribute_bytes.extend([0].to_vec()),
+            }
+        }
     }
 }
 
@@ -36,7 +55,8 @@ mod tests {
     use byteorder::{BigEndian, ByteOrder};
 
     use crate::{
-        ldap_operation::LdapOperation, tag::TagValue, universal_data_type::UniversalDataType,
+        ldap_operation::LdapOperation, ldap_result::LdapResult, tag::TagValue,
+        universal_data_type::UniversalDataType,
     };
 
     use super::*;
@@ -149,4 +169,80 @@ mod tests {
 
         assert_eq!(attribute.get_bytes(), expected_bytes)
     }
+
+    #[test]
+    fn test_get_bytes_bind_response() {
+        let expected_bytes = hex::decode("61070a010004000400").unwrap();
+
+        let result_code_attribute = LdapAttribute::new(
+            Tag::Universal(TagValue {
+                value: UniversalDataType::Enumerated,
+                is_constructed: false,
+            }),
+            Some([LdapResult::Success as u8].to_vec()), // eeh..
+        );
+
+        let matched_dn_attribute = LdapAttribute::new(
+            Tag::Universal(TagValue {
+                value: UniversalDataType::OctetString,
+                is_constructed: false,
+            }),
+            None, // eeh..
+        );
+
+        let diagnostic_message_attribute = LdapAttribute::new(
+            Tag::Universal(TagValue {
+                value: UniversalDataType::OctetString,
+                is_constructed: false,
+            }),
+            None, // eeh..
+        );
+
+        let mut bind_response_attribute = LdapAttribute::new(
+            Tag::Application(TagValue {
+                value: LdapOperation::BindResponse,
+                is_constructed: true,
+            }),
+            None, // eeh..
+        );
+
+        bind_response_attribute
+            .child_attributes
+            .push(result_code_attribute);
+
+        bind_response_attribute
+            .child_attributes
+            .push(matched_dn_attribute);
+
+        bind_response_attribute
+            .child_attributes
+            .push(diagnostic_message_attribute);
+
+        assert_eq!(bind_response_attribute.get_bytes(), expected_bytes)
+    }
+
+    // todo this should test the whole packet, not just the attribute
+    /*
+
+    [TestCase]
+       public void TestLdapAttributeSequenceGetBytes2()
+       {
+           var packet = new LdapPacket(1);
+
+           var bindresponse = new LdapAttribute(LdapOperation.BindResponse);
+
+           var resultCode = new LdapAttribute(UniversalDataType.Enumerated, (byte)LdapResult.success);
+           bindresponse.ChildAttributes.Add(resultCode);
+
+           var matchedDn = new LdapAttribute(UniversalDataType.OctetString);
+           var diagnosticMessage = new LdapAttribute(UniversalDataType.OctetString);
+
+           bindresponse.ChildAttributes.Add(matchedDn);
+           bindresponse.ChildAttributes.Add(diagnosticMessage);
+
+           packet.ChildAttributes.Add(bindresponse);
+
+           var expected = "300f02040000000161070a010004000400"; // "300c02010161070a010004000400";
+           Assert.AreEqual(expected, Utils.ByteArrayToString(packet.GetBytes()));
+       }*/
 }
