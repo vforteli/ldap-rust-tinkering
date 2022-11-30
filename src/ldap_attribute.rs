@@ -171,8 +171,83 @@ mod tests {
     }
 
     #[test]
+    fn test_get_bytes_bind_request() {
+        let expected_bytes = hex::decode("304c0204000000016044020103042d636e3d62696e64557365722c636e3d55736572732c64633d6465762c64633d636f6d70616e792c64633d636f6d801062696e645573657250617373776f7264").unwrap();
+
+        let some_attribute = LdapAttribute::new(
+            Tag::Universal(TagValue {
+                value: UniversalDataType::Integer,
+                is_constructed: false,
+            }),
+            Some([3].to_vec()), // eeh..
+        );
+
+        let bind_username_attribute = LdapAttribute::new(
+            Tag::Universal(TagValue {
+                value: UniversalDataType::OctetString,
+                is_constructed: false,
+            }),
+            Some(
+                "cn=bindUser,cn=Users,dc=dev,dc=company,dc=com"
+                    .as_bytes()
+                    .to_vec(),
+            ), // eeh..
+        );
+
+        let bind_password_attribute = LdapAttribute::new(
+            Tag::Context(TagValue {
+                value: 0,
+                is_constructed: false,
+            }),
+            Some("bindUserPassword".as_bytes().to_vec()), // eeh..
+        );
+
+        let mut bind_request_attribute = LdapAttribute::new(
+            Tag::Application(TagValue {
+                value: LdapOperation::BindRequest,
+                is_constructed: true,
+            }),
+            None, // eeh..
+        );
+
+        bind_request_attribute.child_attributes.push(some_attribute);
+
+        bind_request_attribute
+            .child_attributes
+            .push(bind_username_attribute);
+
+        bind_request_attribute
+            .child_attributes
+            .push(bind_password_attribute);
+
+        let mut buffer: [u8; 4] = [0; 4];
+        BigEndian::write_i32(&mut buffer, 1);
+
+        let message_id_attribute = LdapAttribute::new(
+            Tag::Universal(TagValue {
+                value: UniversalDataType::Integer,
+                is_constructed: false,
+            }),
+            Some(buffer.to_vec()),
+        );
+
+        let mut packet = LdapAttribute::new(
+            Tag::Universal(TagValue {
+                value: UniversalDataType::Sequence,
+                is_constructed: true,
+            }),
+            None,
+        );
+
+        packet.child_attributes.push(message_id_attribute);
+        packet.child_attributes.push(bind_request_attribute);
+
+        assert_eq!(packet.get_bytes(), expected_bytes)
+    }
+
+    #[test]
     fn test_get_bytes_bind_response() {
-        let expected_bytes = hex::decode("61070a010004000400").unwrap();
+        let expected_bytes = hex::decode("300f02040000000161070a010004000400").unwrap();
 
         let result_code_attribute = LdapAttribute::new(
             Tag::Universal(TagValue {
@@ -218,31 +293,28 @@ mod tests {
             .child_attributes
             .push(diagnostic_message_attribute);
 
-        assert_eq!(bind_response_attribute.get_bytes(), expected_bytes)
+        let mut buffer: [u8; 4] = [0; 4];
+        BigEndian::write_i32(&mut buffer, 1);
+
+        let message_id_attribute = LdapAttribute::new(
+            Tag::Universal(TagValue {
+                value: UniversalDataType::Integer,
+                is_constructed: false,
+            }),
+            Some(buffer.to_vec()),
+        );
+
+        let mut packet = LdapAttribute::new(
+            Tag::Universal(TagValue {
+                value: UniversalDataType::Sequence,
+                is_constructed: true,
+            }),
+            None,
+        );
+
+        packet.child_attributes.push(message_id_attribute);
+        packet.child_attributes.push(bind_response_attribute);
+
+        assert_eq!(packet.get_bytes(), expected_bytes)
     }
-
-    // todo this should test the whole packet, not just the attribute
-    /*
-
-    [TestCase]
-       public void TestLdapAttributeSequenceGetBytes2()
-       {
-           var packet = new LdapPacket(1);
-
-           var bindresponse = new LdapAttribute(LdapOperation.BindResponse);
-
-           var resultCode = new LdapAttribute(UniversalDataType.Enumerated, (byte)LdapResult.success);
-           bindresponse.ChildAttributes.Add(resultCode);
-
-           var matchedDn = new LdapAttribute(UniversalDataType.OctetString);
-           var diagnosticMessage = new LdapAttribute(UniversalDataType.OctetString);
-
-           bindresponse.ChildAttributes.Add(matchedDn);
-           bindresponse.ChildAttributes.Add(diagnosticMessage);
-
-           packet.ChildAttributes.Add(bindresponse);
-
-           var expected = "300f02040000000161070a010004000400"; // "300c02010161070a010004000400";
-           Assert.AreEqual(expected, Utils.ByteArrayToString(packet.GetBytes()));
-       }*/
 }
