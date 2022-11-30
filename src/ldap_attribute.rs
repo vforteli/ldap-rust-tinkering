@@ -1,4 +1,10 @@
-use crate::{tag::Tag, utils};
+use byteorder::{BigEndian, ByteOrder};
+
+use crate::{
+    tag::{Tag, TagValue},
+    universal_data_type::UniversalDataType,
+    utils,
+};
 
 pub struct LdapAttribute {
     tag: Tag,
@@ -12,6 +18,29 @@ impl LdapAttribute {
             tag,
             value,
             child_attributes: Vec::new(),
+        }
+    }
+
+    /// the ldap packet is just a specific type of attribute with a message id
+    pub fn new_packet(message_id: i32) -> Self {
+        let mut buffer: [u8; 4] = [0; 4];
+        BigEndian::write_i32(&mut buffer, message_id);
+
+        let message_id_attribute = LdapAttribute::new(
+            Tag::Universal(TagValue {
+                value: UniversalDataType::Integer,
+                is_constructed: false,
+            }),
+            Some(buffer.to_vec()),
+        );
+
+        Self {
+            tag: Tag::Universal(TagValue {
+                value: UniversalDataType::Sequence,
+                is_constructed: true,
+            }),
+            value: None,
+            child_attributes: vec![message_id_attribute],
         }
     }
 
@@ -220,26 +249,7 @@ mod tests {
             .child_attributes
             .push(bind_password_attribute);
 
-        let mut buffer: [u8; 4] = [0; 4];
-        BigEndian::write_i32(&mut buffer, 1);
-
-        let message_id_attribute = LdapAttribute::new(
-            Tag::Universal(TagValue {
-                value: UniversalDataType::Integer,
-                is_constructed: false,
-            }),
-            Some(buffer.to_vec()),
-        );
-
-        let mut packet = LdapAttribute::new(
-            Tag::Universal(TagValue {
-                value: UniversalDataType::Sequence,
-                is_constructed: true,
-            }),
-            None,
-        );
-
-        packet.child_attributes.push(message_id_attribute);
+        let mut packet = LdapAttribute::new_packet(1);
         packet.child_attributes.push(bind_request_attribute);
 
         assert_eq!(packet.get_bytes(), expected_bytes)
@@ -293,26 +303,7 @@ mod tests {
             .child_attributes
             .push(diagnostic_message_attribute);
 
-        let mut buffer: [u8; 4] = [0; 4];
-        BigEndian::write_i32(&mut buffer, 1);
-
-        let message_id_attribute = LdapAttribute::new(
-            Tag::Universal(TagValue {
-                value: UniversalDataType::Integer,
-                is_constructed: false,
-            }),
-            Some(buffer.to_vec()),
-        );
-
-        let mut packet = LdapAttribute::new(
-            Tag::Universal(TagValue {
-                value: UniversalDataType::Sequence,
-                is_constructed: true,
-            }),
-            None,
-        );
-
-        packet.child_attributes.push(message_id_attribute);
+        let mut packet = LdapAttribute::new_packet(1);
         packet.child_attributes.push(bind_response_attribute);
 
         assert_eq!(packet.get_bytes(), expected_bytes)
