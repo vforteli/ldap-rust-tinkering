@@ -6,23 +6,23 @@ use crate::{
     utils,
 };
 
+pub enum LdapValue {
+    Primitive(Vec<u8>),
+    Constructed(Vec<LdapAttribute>),
+}
+
 pub struct LdapAttribute {
     tag: Tag,
-    value: Option<Vec<u8>>,
-    child_attributes: Vec<LdapAttribute>,
+    value: LdapValue,
 }
 
 impl LdapAttribute {
-    pub fn new(tag: Tag, value: Option<Vec<u8>>) -> Self {
-        Self {
-            tag,
-            value,
-            child_attributes: Vec::new(),
-        }
+    pub fn new(tag: Tag, value: LdapValue) -> Self {
+        Self { tag, value }
     }
 
     /// the ldap packet is just a specific type of attribute with a message id
-    pub fn new_packet(message_id: i32) -> Self {
+    pub fn new_packet(message_id: i32, attributes: Vec<LdapAttribute>) -> Self {
         let mut buffer: [u8; 4] = [0; 4];
         BigEndian::write_i32(&mut buffer, message_id);
 
@@ -31,16 +31,18 @@ impl LdapAttribute {
                 value: UniversalDataType::Integer,
                 is_constructed: false,
             }),
-            Some(buffer.to_vec()),
+            LdapValue::Primitive(buffer.to_vec()),
         );
+
+        let mut packet_attributes = vec![message_id_attribute];
+        packet_attributes.extend(attributes);
 
         Self {
             tag: Tag::Universal(TagValue {
                 value: UniversalDataType::Sequence,
                 is_constructed: true,
             }),
-            value: None,
-            child_attributes: vec![message_id_attribute],
+            value: LdapValue::Constructed(packet_attributes),
         }
     }
 
@@ -59,20 +61,18 @@ impl LdapAttribute {
 
         attribute_bytes.extend([tag_byte]);
 
-        if self.child_attributes.len() > 0 {
-            for child_attribute in self.child_attributes {
-                content_bytes.extend(child_attribute.get_bytes());
+        match self.value {
+            LdapValue::Primitive(value) => {
+                attribute_bytes.extend(utils::int_to_ber_length(value.len() as i32));
+                attribute_bytes.extend(value)
             }
-
-            attribute_bytes.extend(utils::int_to_ber_length(content_bytes.len() as i32));
-            attribute_bytes.extend(content_bytes)
-        } else {
-            match self.value {
-                Some(v) => {
-                    attribute_bytes.extend(utils::int_to_ber_length(v.len() as i32));
-                    attribute_bytes.extend(v)
+            LdapValue::Constructed(attributes) => {
+                for child_attribute in attributes {
+                    content_bytes.extend(child_attribute.get_bytes());
                 }
-                None => attribute_bytes.extend([0].to_vec()),
+
+                attribute_bytes.extend(utils::int_to_ber_length(content_bytes.len() as i32));
+                attribute_bytes.extend(content_bytes)
             }
         }
     }
@@ -97,7 +97,7 @@ mod tests {
                 value: LdapOperation::BindRequest,
                 is_constructed: false,
             }),
-            None,
+            LdapValue::Primitive(Vec::new()),
         );
 
         match attribute.tag {
@@ -115,7 +115,7 @@ mod tests {
                 value: UniversalDataType::OctetString,
                 is_constructed: false,
             }),
-            Some("dc=karakorum,dc=net".as_bytes().to_vec()),
+            LdapValue::Primitive("dc=karakorum,dc=net".as_bytes().to_vec()),
         );
 
         assert_eq!(attribute.get_bytes(), expected_bytes)
@@ -130,7 +130,7 @@ mod tests {
                 value: UniversalDataType::Boolean,
                 is_constructed: false,
             }),
-            Some([true as u8].to_vec()), // eeh..
+            LdapValue::Primitive([true as u8].to_vec()), // eeh..
         );
 
         assert_eq!(attribute.get_bytes(), expected_bytes)
@@ -145,7 +145,7 @@ mod tests {
                 value: UniversalDataType::Boolean,
                 is_constructed: false,
             }),
-            Some([false as u8].to_vec()), // eeh..
+            LdapValue::Primitive([false as u8].to_vec()), // eeh..
         );
 
         assert_eq!(attribute.get_bytes(), expected_bytes)
@@ -160,7 +160,7 @@ mod tests {
                 value: UniversalDataType::Integer,
                 is_constructed: false,
             }),
-            Some([1].to_vec()), // eeh..
+            LdapValue::Primitive([1].to_vec()), // eeh..
         );
 
         assert_eq!(attribute.get_bytes(), expected_bytes)
@@ -175,7 +175,7 @@ mod tests {
                 value: UniversalDataType::Integer,
                 is_constructed: false,
             }),
-            Some([2].to_vec()), // eeh..
+            LdapValue::Primitive([2].to_vec()), // eeh..
         );
 
         assert_eq!(attribute.get_bytes(), expected_bytes)
@@ -193,7 +193,7 @@ mod tests {
                 value: UniversalDataType::Integer,
                 is_constructed: false,
             }),
-            Some(buffer.to_vec()), // eeh..
+            LdapValue::Primitive(buffer.to_vec()), // eeh..
         );
 
         assert_eq!(attribute.get_bytes(), expected_bytes)
@@ -208,7 +208,7 @@ mod tests {
                 value: UniversalDataType::Integer,
                 is_constructed: false,
             }),
-            Some([3].to_vec()), // eeh..
+            LdapValue::Primitive([3].to_vec()), // eeh..
         );
 
         let bind_username_attribute = LdapAttribute::new(
@@ -216,7 +216,7 @@ mod tests {
                 value: UniversalDataType::OctetString,
                 is_constructed: false,
             }),
-            Some(
+            LdapValue::Primitive(
                 "cn=bindUser,cn=Users,dc=dev,dc=company,dc=com"
                     .as_bytes()
                     .to_vec(),
@@ -228,29 +228,22 @@ mod tests {
                 value: 0,
                 is_constructed: false,
             }),
-            Some("bindUserPassword".as_bytes().to_vec()), // eeh..
+            LdapValue::Primitive("bindUserPassword".as_bytes().to_vec()), // eeh..
         );
 
-        let mut bind_request_attribute = LdapAttribute::new(
+        let bind_request_attribute = LdapAttribute::new(
             Tag::Application(TagValue {
                 value: LdapOperation::BindRequest,
                 is_constructed: true,
             }),
-            None, // eeh..
+            LdapValue::Constructed(vec![
+                some_attribute,
+                bind_username_attribute,
+                bind_password_attribute,
+            ]),
         );
 
-        bind_request_attribute.child_attributes.push(some_attribute);
-
-        bind_request_attribute
-            .child_attributes
-            .push(bind_username_attribute);
-
-        bind_request_attribute
-            .child_attributes
-            .push(bind_password_attribute);
-
-        let mut packet = LdapAttribute::new_packet(1);
-        packet.child_attributes.push(bind_request_attribute);
+        let packet = LdapAttribute::new_packet(1, vec![bind_request_attribute]);
 
         assert_eq!(packet.get_bytes(), expected_bytes)
     }
@@ -264,7 +257,7 @@ mod tests {
                 value: UniversalDataType::Enumerated,
                 is_constructed: false,
             }),
-            Some([LdapResult::Success as u8].to_vec()), // eeh..
+            LdapValue::Primitive([LdapResult::Success as u8].to_vec()), // eeh..
         );
 
         let matched_dn_attribute = LdapAttribute::new(
@@ -272,7 +265,7 @@ mod tests {
                 value: UniversalDataType::OctetString,
                 is_constructed: false,
             }),
-            None, // eeh..
+            LdapValue::Primitive(Vec::new()), // eeh..
         );
 
         let diagnostic_message_attribute = LdapAttribute::new(
@@ -280,31 +273,22 @@ mod tests {
                 value: UniversalDataType::OctetString,
                 is_constructed: false,
             }),
-            None, // eeh..
+            LdapValue::Primitive(Vec::new()), // eeh..
         );
 
-        let mut bind_response_attribute = LdapAttribute::new(
+        let bind_response_attribute = LdapAttribute::new(
             Tag::Application(TagValue {
                 value: LdapOperation::BindResponse,
                 is_constructed: true,
             }),
-            None, // eeh..
+            LdapValue::Constructed(vec![
+                result_code_attribute,
+                matched_dn_attribute,
+                diagnostic_message_attribute,
+            ]), // eeh..
         );
 
-        bind_response_attribute
-            .child_attributes
-            .push(result_code_attribute);
-
-        bind_response_attribute
-            .child_attributes
-            .push(matched_dn_attribute);
-
-        bind_response_attribute
-            .child_attributes
-            .push(diagnostic_message_attribute);
-
-        let mut packet = LdapAttribute::new_packet(1);
-        packet.child_attributes.push(bind_response_attribute);
+        let packet = LdapAttribute::new_packet(1, vec![bind_response_attribute]);
 
         assert_eq!(packet.get_bytes(), expected_bytes)
     }
