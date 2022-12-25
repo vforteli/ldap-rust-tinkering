@@ -14,8 +14,6 @@ pub enum LdapValue {
 pub struct LdapAttribute {
     tag: Tag,
     value: LdapValue,
-    // value: Option<Vec<u8>>,
-    // child_attributes: Vec<LdapAttribute>,
 }
 
 impl LdapAttribute {
