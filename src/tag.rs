@@ -8,15 +8,6 @@ pub struct TagValue<T> {
     pub is_constructed: bool,
 }
 
-// impl From<u8> for TagValue<UniversalDataType> {
-//     fn from(tag_byte: u8) -> Self {
-//         TagValue {
-//             value: (tag_byte & 31).into(),
-//             is_constructed: (tag_byte & (1 << 5)) != 0,
-//         }
-//     }
-// }
-
 #[derive(Debug, PartialEq, Clone)]
 #[repr(u8)]
 pub enum Tag {

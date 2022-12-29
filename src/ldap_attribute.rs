@@ -3,7 +3,7 @@ use byteorder::{BigEndian, ByteOrder};
 use crate::{
     tag::{Tag, TagValue},
     universal_data_type::UniversalDataType,
-    utils,
+    utils, ldap_error,
 };
 
 pub enum LdapValue {
@@ -75,6 +75,24 @@ impl LdapAttribute {
                 attribute_bytes.extend(content_bytes)
             }
         }
+    }
+
+    pub fn parse(packet_bytes: &[u8]) -> Result<Self, ldap_error::LdapError> {
+        let tag: Tag = packet_bytes[0].into();
+        
+        println!("got tag! {:?}", tag);
+
+        // var packet = new LdapPacket(Tag.Parse(bytes[0]));
+        // var contentLength = Utils.BerLengthToInt(bytes, 1, out var lengthBytesCount);
+        // packet.ChildAttributes.AddRange(ParseAttributes(bytes, 1 + lengthBytesCount, contentLength));
+        // return packet;
+        todo!("whoops, kinda forgot parsing :D")
+        // let length_from_packet = BigEndian::read_u16(&packet_bytes[2..4]) as usize;
+    }
+
+    fn parse_attribute(attribute_bytes: &[u8]) -> Result<Self, ldap_error::LdapError> {
+        todo!("whoops, kinda forgot parsing :D")
+        // let length_from_packet = BigEndian::read_u16(&packet_bytes[2..4]) as usize;
     }
 }
 
