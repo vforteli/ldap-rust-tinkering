@@ -1,8 +1,9 @@
 use byteorder::{BigEndian, ByteOrder};
 
+#[derive(Debug)]
 pub struct BerLengthResult {
-    value: i32,
-    bytes_consumed: usize,
+    pub value: i32,
+    pub bytes_consumed: usize,
 }
 
 pub fn int_to_ber_length(value: i32) -> Vec<u8> {
@@ -19,7 +20,7 @@ pub fn int_to_ber_length(value: i32) -> Vec<u8> {
 }
 
 /// Convert ber length bytes to i32 and how many bytes were used
-pub fn ber_length_to_i32(ber_length_bytes: Vec<u8>) -> BerLengthResult {
+pub fn ber_length_to_i32(ber_length_bytes: &[u8]) -> BerLengthResult {
     let short_length = ber_length_bytes[0] & 127;
 
     match ber_length_bytes[0] >> 7 {
@@ -74,7 +75,7 @@ mod tests {
     }
 
     fn test_ber_length_to_i32(hex_bytes: &str, expected_i32: i32, bytes_used: usize) {
-        let actual = ber_length_to_i32(hex::decode(hex_bytes).unwrap());
+        let actual = ber_length_to_i32(&hex::decode(hex_bytes).unwrap());
 
         assert_eq!(actual.value, expected_i32);
         assert_eq!(actual.bytes_consumed, bytes_used);

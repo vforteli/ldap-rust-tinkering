@@ -1,9 +1,10 @@
 use byteorder::{BigEndian, ByteOrder};
 
 use crate::{
+    ldap_error,
     tag::{Tag, TagValue},
     universal_data_type::UniversalDataType,
-    utils, ldap_error,
+    utils, ldap_operation::LdapOperation,
 };
 
 pub enum LdapValue {
@@ -79,20 +80,45 @@ impl LdapAttribute {
 
     pub fn parse(packet_bytes: &[u8]) -> Result<Self, ldap_error::LdapError> {
         let tag: Tag = packet_bytes[0].into();
-        
         println!("got tag! {:?}", tag);
+
+        let length = utils::ber_length_to_i32(&packet_bytes[1..]);
+        println!("length stuff! {:?}", length);
+
+        let value_bytes = &packet_bytes[(1 + length.bytes_consumed)..];
+        if length.value > value_bytes.len().try_into().unwrap() {
+            return Err(ldap_error::LdapError::InvalidLength);
+        }
+
+        println!("packet length {}", value_bytes.len());
+
+        match tag {
+            Tag::Universal(v) => todo!(),
+            Tag::Application(_) => todo!(),
+            Tag::Context(_) => todo!(),
+            Tag::Private => todo!(),
+        }
 
         // var packet = new LdapPacket(Tag.Parse(bytes[0]));
         // var contentLength = Utils.BerLengthToInt(bytes, 1, out var lengthBytesCount);
         // packet.ChildAttributes.AddRange(ParseAttributes(bytes, 1 + lengthBytesCount, contentLength));
         // return packet;
-        todo!("whoops, kinda forgot parsing :D")
+        // todo!("whoops, kinda forgot parsing :D")
         // let length_from_packet = BigEndian::read_u16(&packet_bytes[2..4]) as usize;
+        Ok(LdapAttribute {
+            tag,
+            value: LdapValue::Primitive(vec![]),
+        })
     }
 
     fn parse_attribute(attribute_bytes: &[u8]) -> Result<Self, ldap_error::LdapError> {
-        todo!("whoops, kinda forgot parsing :D")
+        let tag: Tag = attribute_bytes[0].into();
+        // todo!("whoops, kinda forgot parsing :D")
         // let length_from_packet = BigEndian::read_u16(&packet_bytes[2..4]) as usize;
+        Ok(LdapAttribute {
+            tag,
+            value: LdapValue::Primitive(vec![]),
+        })
     }
 }
 
@@ -215,6 +241,35 @@ mod tests {
         );
 
         assert_eq!(attribute.get_bytes(), expected_bytes)
+    }
+
+    #[test]
+    fn test_parse_bind_request() {
+        let bind_request_bytes = hex::decode("304c0204000000016044020103042d636e3d62696e64557365722c636e3d55736572732c64633d6465762c64633d636f6d70616e792c64633d636f6d801062696e645573657250617373776f7264").unwrap();
+
+        let packet = LdapAttribute::parse(&bind_request_bytes).unwrap();
+
+        match packet.tag {
+            Tag::Universal(value) => {
+                assert_eq!(value.is_constructed, true)
+            }
+            _ => assert!(false),
+        }
+
+        // let response_packet = match packet.packetcode {
+        //     PacketCode::AccessRequest => {
+        //         // yes yes, this should be done in one go...
+        //         let username = packet.attributes.iter().find_map(|a| match a {
+        //             RfcAttributeType::UserName(u) => Some(u),
+        //             _ => None,
+        //         });
+
+        //         let password = packet.attributes.iter().find_map(|a| match a {
+        //             RfcAttributeType::UserPassword(u) => {
+        //                 Some(decrypt(secret_bytes, &packet.authenticator, u))
+        //             }
+        //             _ => None,
+        //         });
     }
 
     #[test]
