@@ -4,7 +4,7 @@ use crate::{
     ldap_error,
     tag::{Tag, TagValue},
     universal_data_type::UniversalDataType,
-    utils, ldap_operation::LdapOperation,
+    utils,
 };
 
 pub enum LdapValue {
@@ -47,7 +47,7 @@ impl LdapAttribute {
         }
     }
 
-    pub fn get_bytes(self) -> Vec<u8> {
+    pub fn get_bytes(&self) -> Vec<u8> {
         let mut attribute_bytes: Vec<u8> = Vec::new();
 
         self.get_bytes_recursive(&mut attribute_bytes);
@@ -55,22 +55,21 @@ impl LdapAttribute {
         attribute_bytes
     }
 
-    fn get_bytes_recursive(self, attribute_bytes: &mut Vec<u8>) {
-        // argh, probably need to make this safer, ie typed tag types etc, ensuring only constructed attributes can have child attributes etc
-        let tag_byte: u8 = self.tag.into();
-        let mut content_bytes: Vec<u8> = Vec::new();
+    fn get_bytes_recursive(&self, attribute_bytes: &mut Vec<u8>) {
+        let tag_byte: u8 = self.tag.clone().into();
 
         attribute_bytes.extend([tag_byte]);
 
-        match self.value {
+        match &self.value {
             LdapValue::Primitive(value) => {
                 attribute_bytes.extend(utils::int_to_ber_length(value.len() as i32));
                 attribute_bytes.extend(value)
             }
             LdapValue::Constructed(attributes) => {
-                for child_attribute in attributes {
-                    content_bytes.extend(child_attribute.get_bytes());
-                }
+                let content_bytes = attributes.iter().fold(Vec::new(), |mut bytes, attribute| {
+                    bytes.extend(attribute.get_bytes());
+                    bytes
+                });
 
                 attribute_bytes.extend(utils::int_to_ber_length(content_bytes.len() as i32));
                 attribute_bytes.extend(content_bytes)
@@ -92,12 +91,12 @@ impl LdapAttribute {
 
         println!("packet length {}", value_bytes.len());
 
-        match tag {
-            Tag::Universal(v) => todo!(),
-            Tag::Application(_) => todo!(),
-            Tag::Context(_) => todo!(),
-            Tag::Private => todo!(),
-        }
+        // match tag {
+        //     Tag::Universal(v) => v.is_constructed,
+        //     Tag::Application(_) => todo!(),
+        //     Tag::Context(_) => todo!(),
+        //     Tag::Private => todo!(),
+        // }
 
         // var packet = new LdapPacket(Tag.Parse(bytes[0]));
         // var contentLength = Utils.BerLengthToInt(bytes, 1, out var lengthBytesCount);
