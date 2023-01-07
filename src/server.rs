@@ -36,8 +36,9 @@ impl Server {
 
                 let _packet = LdapAttribute::parse(&buf);
 
+                let response = "lulz".as_bytes();
                 socket
-                    .write_all(&buf[0..n])
+                    .write_all(response)
                     .await
                     .expect("failed to write data to socket");
                 // }

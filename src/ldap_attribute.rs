@@ -1,11 +1,6 @@
 use byteorder::{BigEndian, ByteOrder};
 
-use crate::{
-    ldap_error,
-    tag::{Tag, TagValue},
-    universal_data_type::UniversalDataType,
-    utils,
-};
+use crate::{ldap_error, tag::Tag, universal_data_type::UniversalDataType, utils};
 
 pub enum LdapValue {
     Primitive(Vec<u8>),
@@ -28,10 +23,10 @@ impl LdapAttribute {
         BigEndian::write_i32(&mut buffer, message_id);
 
         let message_id_attribute = LdapAttribute::new(
-            Tag::Universal(TagValue {
-                value: UniversalDataType::Integer,
+            Tag::Universal {
+                data_type: UniversalDataType::Integer,
                 is_constructed: false,
-            }),
+            },
             LdapValue::Primitive(buffer.to_vec()),
         );
 
@@ -39,10 +34,10 @@ impl LdapAttribute {
         packet_attributes.extend(attributes);
 
         Self {
-            tag: Tag::Universal(TagValue {
-                value: UniversalDataType::Sequence,
+            tag: Tag::Universal {
+                data_type: UniversalDataType::Sequence,
                 is_constructed: true,
-            }),
+            },
             value: LdapValue::Constructed(packet_attributes),
         }
     }
@@ -56,9 +51,7 @@ impl LdapAttribute {
     }
 
     fn get_bytes_recursive(&self, attribute_bytes: &mut Vec<u8>) {
-        let tag_byte: u8 = self.tag.clone().into();
-
-        attribute_bytes.extend([tag_byte]);
+        attribute_bytes.extend([u8::from(self.tag.clone())]);
 
         match &self.value {
             LdapValue::Primitive(value) => {
@@ -84,40 +77,106 @@ impl LdapAttribute {
         let length = utils::ber_length_to_i32(&packet_bytes[1..]);
         println!("length stuff! {:?}", length);
 
-        let value_bytes = &packet_bytes[(1 + length.bytes_consumed)..];
+        let value_bytes = &packet_bytes
+            [(1 + length.bytes_consumed)..(1 + length.bytes_consumed + length.value as usize)];
+
         if length.value > value_bytes.len().try_into().unwrap() {
             return Err(ldap_error::LdapError::InvalidLength);
         }
 
         println!("packet length {}", value_bytes.len());
 
-        // match tag {
-        //     Tag::Universal(v) => v.is_constructed,
-        //     Tag::Application(_) => todo!(),
-        //     Tag::Context(_) => todo!(),
-        //     Tag::Private => todo!(),
-        // }
-
-        // var packet = new LdapPacket(Tag.Parse(bytes[0]));
-        // var contentLength = Utils.BerLengthToInt(bytes, 1, out var lengthBytesCount);
-        // packet.ChildAttributes.AddRange(ParseAttributes(bytes, 1 + lengthBytesCount, contentLength));
-        // return packet;
-        // todo!("whoops, kinda forgot parsing :D")
-        // let length_from_packet = BigEndian::read_u16(&packet_bytes[2..4]) as usize;
         Ok(LdapAttribute {
             tag,
-            value: LdapValue::Primitive(vec![]),
+            value: LdapValue::Constructed(Self::parse_attributes(&value_bytes).unwrap()),
         })
     }
 
-    fn parse_attribute(attribute_bytes: &[u8]) -> Result<Self, ldap_error::LdapError> {
-        let tag: Tag = attribute_bytes[0].into();
-        // todo!("whoops, kinda forgot parsing :D")
-        // let length_from_packet = BigEndian::read_u16(&packet_bytes[2..4]) as usize;
-        Ok(LdapAttribute {
-            tag,
-            value: LdapValue::Primitive(vec![]),
-        })
+    fn parse_attributes(attribute_bytes: &[u8]) -> Result<Vec<Self>, ldap_error::LdapError> {
+        let mut attributes: Vec<LdapAttribute> = Vec::new();
+
+        let mut position: usize = 0;
+
+        while position < attribute_bytes.len() {
+            let tag: Tag = attribute_bytes[position].into();
+            println!("got tag! {:?}", tag);
+            position += 1;
+
+            let length = utils::ber_length_to_i32(&attribute_bytes[position..]);
+            position += length.bytes_consumed;
+
+            let attribute_value_length = length.value;
+
+            // todo ugh...
+            let is_constructed = match tag {
+                Tag::Universal {
+                    data_type,
+                    is_constructed,
+                } => is_constructed,
+                Tag::Application {
+                    operation,
+                    is_constructed,
+                } => is_constructed,
+                Tag::Context {
+                    value,
+                    is_constructed,
+                } => is_constructed,
+                Tag::Private => todo!(),
+            };
+
+            let value = if is_constructed {
+                let foo = Self::parse_attributes(
+                    &attribute_bytes[position..(position + attribute_value_length as usize)]
+                        .to_vec(),
+                )
+                .unwrap();
+                LdapValue::Constructed(foo)
+            } else {
+                LdapValue::Primitive(
+                    attribute_bytes[position..(position + attribute_value_length as usize)]
+                        .to_vec(),
+                )
+            };
+
+            let attribute = LdapAttribute::new(tag, value);
+            attributes.push(attribute);
+
+            position += attribute_value_length as usize;
+        }
+
+        Ok(attributes)
+
+        // var list = new List<LdapAttribute>();
+        // while (currentPosition < length)
+        // {
+        //     var tag = Tag.Parse(bytes[currentPosition]);
+        //     currentPosition++;
+        //     var attributeLength = Utils.BerLengthToInt(bytes, currentPosition, out int i);
+        //     currentPosition += i;
+
+        //     var attribute = new LdapAttribute(tag);
+        //     if (tag.IsConstructed && attributeLength > 0)
+        //     {
+        //         attribute.ChildAttributes = ParseAttributes(bytes, currentPosition, currentPosition + attributeLength);
+        //     }
+        //     else
+        //     {
+        //         attribute.Value = new byte[attributeLength];
+        //         Buffer.BlockCopy(bytes, currentPosition, attribute.Value, 0, attributeLength);
+        //     }
+        //     list.Add(attribute);
+
+        //     currentPosition += attributeLength;
+        // }
+        // return list;
+
+        // let tag: Tag = attribute_bytes[0].into();
+        // // todo!("whoops, kinda forgot parsing :D")
+        // // let length_from_packet = BigEndian::read_u16(&packet_bytes[2..4]) as usize;
+        // Ok(LdapAttribute {
+        //     tag,
+        //     value: LdapValue::Primitive(vec![]),
+        // })
     }
 }
 
@@ -127,7 +186,7 @@ mod tests {
     use byteorder::{BigEndian, ByteOrder};
 
     use crate::{
-        ldap_operation::LdapOperation, ldap_result::LdapResult, tag::TagValue,
+        ldap_operation::LdapOperation, ldap_result::LdapResult,
         universal_data_type::UniversalDataType,
     };
 
@@ -136,15 +195,18 @@ mod tests {
     #[test]
     fn test_create_bind_request_attribute() {
         let attribute = LdapAttribute::new(
-            Tag::Application(TagValue {
-                value: LdapOperation::BindRequest,
+            Tag::Application {
+                operation: LdapOperation::BindRequest,
                 is_constructed: false,
-            }),
+            },
             LdapValue::Primitive(Vec::new()),
         );
 
         match attribute.tag {
-            Tag::Application(t) => assert_eq!(t.value, LdapOperation::BindRequest),
+            Tag::Application {
+                operation,
+                is_constructed: _,
+            } => assert_eq!(operation, LdapOperation::BindRequest),
             _ => assert!(false),
         }
     }
@@ -154,10 +216,10 @@ mod tests {
         let expected_bytes = hex::decode("041364633d6b6172616b6f72756d2c64633d6e6574").unwrap();
 
         let attribute = LdapAttribute::new(
-            Tag::Universal(TagValue {
-                value: UniversalDataType::OctetString,
+            Tag::Universal {
+                data_type: UniversalDataType::OctetString,
                 is_constructed: false,
-            }),
+            },
             LdapValue::Primitive("dc=karakorum,dc=net".as_bytes().to_vec()),
         );
 
@@ -169,10 +231,10 @@ mod tests {
         let expected_bytes = hex::decode("010101").unwrap();
 
         let attribute = LdapAttribute::new(
-            Tag::Universal(TagValue {
-                value: UniversalDataType::Boolean,
+            Tag::Universal {
+                data_type: UniversalDataType::Boolean,
                 is_constructed: false,
-            }),
+            },
             LdapValue::Primitive([true as u8].to_vec()), // eeh..
         );
 
@@ -184,10 +246,10 @@ mod tests {
         let expected_bytes = hex::decode("010100").unwrap();
 
         let attribute = LdapAttribute::new(
-            Tag::Universal(TagValue {
-                value: UniversalDataType::Boolean,
+            Tag::Universal {
+                data_type: UniversalDataType::Boolean,
                 is_constructed: false,
-            }),
+            },
             LdapValue::Primitive([false as u8].to_vec()), // eeh..
         );
 
@@ -199,10 +261,10 @@ mod tests {
         let expected_bytes = hex::decode("020101").unwrap();
 
         let attribute = LdapAttribute::new(
-            Tag::Universal(TagValue {
-                value: UniversalDataType::Integer,
+            Tag::Universal {
+                data_type: UniversalDataType::Integer,
                 is_constructed: false,
-            }),
+            },
             LdapValue::Primitive([1].to_vec()), // eeh..
         );
 
@@ -214,10 +276,10 @@ mod tests {
         let expected_bytes = hex::decode("020102").unwrap();
 
         let attribute = LdapAttribute::new(
-            Tag::Universal(TagValue {
-                value: UniversalDataType::Integer,
+            Tag::Universal {
+                data_type: UniversalDataType::Integer,
                 is_constructed: false,
-            }),
+            },
             LdapValue::Primitive([2].to_vec()), // eeh..
         );
 
@@ -232,10 +294,10 @@ mod tests {
         BigEndian::write_i32(&mut buffer, i32::MAX);
 
         let attribute = LdapAttribute::new(
-            Tag::Universal(TagValue {
-                value: UniversalDataType::Integer,
+            Tag::Universal {
+                data_type: UniversalDataType::Integer,
                 is_constructed: false,
-            }),
+            },
             LdapValue::Primitive(buffer.to_vec()), // eeh..
         );
 
@@ -249,12 +311,16 @@ mod tests {
         let packet = LdapAttribute::parse(&bind_request_bytes).unwrap();
 
         match packet.tag {
-            Tag::Universal(value) => {
-                assert_eq!(value.is_constructed, true)
+            Tag::Universal {
+                data_type,
+                is_constructed,
+            } => {
+                assert_eq!(is_constructed, true)
             }
             _ => assert!(false),
         }
 
+        assert_eq!(true, false)
         // let response_packet = match packet.packetcode {
         //     PacketCode::AccessRequest => {
         //         // yes yes, this should be done in one go...
@@ -276,18 +342,18 @@ mod tests {
         let expected_bytes = hex::decode("304c0204000000016044020103042d636e3d62696e64557365722c636e3d55736572732c64633d6465762c64633d636f6d70616e792c64633d636f6d801062696e645573657250617373776f7264").unwrap();
 
         let some_attribute = LdapAttribute::new(
-            Tag::Universal(TagValue {
-                value: UniversalDataType::Integer,
+            Tag::Universal {
+                data_type: UniversalDataType::Integer,
                 is_constructed: false,
-            }),
+            },
             LdapValue::Primitive([3].to_vec()), // eeh..
         );
 
         let bind_username_attribute = LdapAttribute::new(
-            Tag::Universal(TagValue {
-                value: UniversalDataType::OctetString,
+            Tag::Universal {
+                data_type: UniversalDataType::OctetString,
                 is_constructed: false,
-            }),
+            },
             LdapValue::Primitive(
                 "cn=bindUser,cn=Users,dc=dev,dc=company,dc=com"
                     .as_bytes()
@@ -296,18 +362,18 @@ mod tests {
         );
 
         let bind_password_attribute = LdapAttribute::new(
-            Tag::Context(TagValue {
+            Tag::Context {
                 value: 0,
                 is_constructed: false,
-            }),
+            },
             LdapValue::Primitive("bindUserPassword".as_bytes().to_vec()), // eeh..
         );
 
         let bind_request_attribute = LdapAttribute::new(
-            Tag::Application(TagValue {
-                value: LdapOperation::BindRequest,
+            Tag::Application {
+                operation: LdapOperation::BindRequest,
                 is_constructed: true,
-            }),
+            },
             LdapValue::Constructed(vec![
                 some_attribute,
                 bind_username_attribute,
@@ -325,34 +391,34 @@ mod tests {
         let expected_bytes = hex::decode("300f02040000000161070a010004000400").unwrap();
 
         let result_code_attribute = LdapAttribute::new(
-            Tag::Universal(TagValue {
-                value: UniversalDataType::Enumerated,
+            Tag::Universal {
+                data_type: UniversalDataType::Enumerated,
                 is_constructed: false,
-            }),
+            },
             LdapValue::Primitive([LdapResult::Success as u8].to_vec()), // eeh..
         );
 
         let matched_dn_attribute = LdapAttribute::new(
-            Tag::Universal(TagValue {
-                value: UniversalDataType::OctetString,
+            Tag::Universal {
+                data_type: UniversalDataType::OctetString,
                 is_constructed: false,
-            }),
+            },
             LdapValue::Primitive(Vec::new()), // eeh..
         );
 
         let diagnostic_message_attribute = LdapAttribute::new(
-            Tag::Universal(TagValue {
-                value: UniversalDataType::OctetString,
+            Tag::Universal {
+                data_type: UniversalDataType::OctetString,
                 is_constructed: false,
-            }),
+            },
             LdapValue::Primitive(Vec::new()), // eeh..
         );
 
         let bind_response_attribute = LdapAttribute::new(
-            Tag::Application(TagValue {
-                value: LdapOperation::BindResponse,
+            Tag::Application {
+                operation: LdapOperation::BindResponse,
                 is_constructed: true,
-            }),
+            },
             LdapValue::Constructed(vec![
                 result_code_attribute,
                 matched_dn_attribute,
