@@ -2,14 +2,18 @@ use byteorder::{BigEndian, ByteOrder};
 
 use crate::{ldap_error, tag::Tag, universal_data_type::UniversalDataType, utils};
 
+// todo convert all unwraps etc to something which checks for errors...
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum LdapValue {
     Primitive(Vec<u8>),
     Constructed(Vec<LdapAttribute>),
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct LdapAttribute {
-    tag: Tag,
-    value: LdapValue,
+    pub tag: Tag,
+    pub value: LdapValue,
 }
 
 impl LdapAttribute {
@@ -110,15 +114,15 @@ impl LdapAttribute {
             // todo ugh...
             let is_constructed = match tag {
                 Tag::Universal {
-                    data_type,
+                    data_type: _,
                     is_constructed,
                 } => is_constructed,
                 Tag::Application {
-                    operation,
+                    operation: _,
                     is_constructed,
                 } => is_constructed,
                 Tag::Context {
-                    value,
+                    value: _,
                     is_constructed,
                 } => is_constructed,
                 Tag::Private => todo!(),
@@ -145,38 +149,6 @@ impl LdapAttribute {
         }
 
         Ok(attributes)
-
-        // var list = new List<LdapAttribute>();
-        // while (currentPosition < length)
-        // {
-        //     var tag = Tag.Parse(bytes[currentPosition]);
-        //     currentPosition++;
-        //     var attributeLength = Utils.BerLengthToInt(bytes, currentPosition, out int i);
-        //     currentPosition += i;
-
-        //     var attribute = new LdapAttribute(tag);
-        //     if (tag.IsConstructed && attributeLength > 0)
-        //     {
-        //         attribute.ChildAttributes = ParseAttributes(bytes, currentPosition, currentPosition + attributeLength);
-        //     }
-        //     else
-        //     {
-        //         attribute.Value = new byte[attributeLength];
-        //         Buffer.BlockCopy(bytes, currentPosition, attribute.Value, 0, attributeLength);
-        //     }
-        //     list.Add(attribute);
-
-        //     currentPosition += attributeLength;
-        // }
-        // return list;
-
-        // let tag: Tag = attribute_bytes[0].into();
-        // // todo!("whoops, kinda forgot parsing :D")
-        // // let length_from_packet = BigEndian::read_u16(&packet_bytes[2..4]) as usize;
-        // Ok(LdapAttribute {
-        //     tag,
-        //     value: LdapValue::Primitive(vec![]),
-        // })
     }
 }
 
@@ -305,7 +277,7 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_bind_request() {
+    fn test_parse_bind_request_and_get_bytes() {
         let bind_request_bytes = hex::decode("304c0204000000016044020103042d636e3d62696e64557365722c636e3d55736572732c64633d6465762c64633d636f6d70616e792c64633d636f6d801062696e645573657250617373776f7264").unwrap();
 
         let packet = LdapAttribute::parse(&bind_request_bytes).unwrap();
@@ -315,26 +287,22 @@ mod tests {
                 data_type,
                 is_constructed,
             } => {
-                assert_eq!(is_constructed, true)
+                assert_eq!(is_constructed, true);
+                assert_eq!(data_type, UniversalDataType::Sequence);
             }
             _ => assert!(false),
         }
 
-        assert_eq!(true, false)
-        // let response_packet = match packet.packetcode {
-        //     PacketCode::AccessRequest => {
-        //         // yes yes, this should be done in one go...
-        //         let username = packet.attributes.iter().find_map(|a| match a {
-        //             RfcAttributeType::UserName(u) => Some(u),
-        //             _ => None,
-        //         });
+        match &packet.value {
+            LdapValue::Primitive(_) => assert!(false),
+            LdapValue::Constructed(attributes) => {
+                assert_eq!(attributes.len(), 2);
+            }
+        }
 
-        //         let password = packet.attributes.iter().find_map(|a| match a {
-        //             RfcAttributeType::UserPassword(u) => {
-        //                 Some(decrypt(secret_bytes, &packet.authenticator, u))
-        //             }
-        //             _ => None,
-        //         });
+        let bytes = packet.get_bytes();
+
+        assert_eq!(bytes, bind_request_bytes);
     }
 
     #[test]

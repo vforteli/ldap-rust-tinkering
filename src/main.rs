@@ -1,7 +1,6 @@
 use crate::server::Server;
 
 pub mod ldap_attribute;
-pub mod ldap_attribute_copy;
 pub mod ldap_error;
 pub mod ldap_filter_choice;
 pub mod ldap_operation;
