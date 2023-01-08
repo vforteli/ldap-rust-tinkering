@@ -1,4 +1,7 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    vec,
+};
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -11,6 +14,7 @@ use crate::{
     ldap_operation::LdapOperation,
     ldap_result::LdapResult,
     tag::Tag,
+    universal_data_type::UniversalDataType,
     utils,
 };
 
@@ -35,6 +39,7 @@ impl Server {
             tokio::spawn(async move {
                 let mut buf = vec![0; 1024 * 10];
 
+                // todo uh.. should probably exit this loop at some point...
                 loop {
                     let n = socket
                         .read(&mut buf)
@@ -42,6 +47,7 @@ impl Server {
                         .expect("failed to read data from socket");
 
                     if n == 0 {
+                        println!("{:?} remote closed connection", socket.peer_addr());
                         return;
                     }
 
@@ -50,7 +56,7 @@ impl Server {
 
                     let request_packet = LdapAttribute::parse(&buf).unwrap();
 
-                    let response_packet = match &request_packet.value {
+                    let response_packets = match &request_packet.value {
                         LdapValue::Primitive(_) => Err(LdapError::UnexpectedPacket),
                         LdapValue::Constructed(attributes) => {
                             match &attributes.get(1).unwrap().tag {
@@ -61,7 +67,7 @@ impl Server {
                                     LdapOperation::BindRequest => {
                                         Self::handle_bind_request(&request_packet)
                                     }
-                                    LdapOperation::UnbindRequest => Ok(None),
+                                    LdapOperation::UnbindRequest => Ok(Vec::new()),
                                     LdapOperation::SearchRequest => {
                                         Self::handle_search_request(&request_packet)
                                     }
@@ -72,20 +78,13 @@ impl Server {
                         }
                     };
 
-                    match response_packet.unwrap() {
-                        Some(packet) => {
-                            let response_bytes = packet.get_bytes();
+                    for packet in response_packets.unwrap() {
+                        let response_bytes = packet.get_bytes();
 
-                            println!("response bytes: {:?}", response_bytes);
-
-                            socket
-                                .write_all(&response_bytes)
-                                .await
-                                .expect("failed to write data to socket");
-
-                            socket.flush().await.expect("hu?");
-                        }
-                        None => (),
+                        socket
+                            .write_all(&response_bytes)
+                            .await
+                            .expect("failed to write data to socket");
                     }
                 }
             });
@@ -94,7 +93,7 @@ impl Server {
 
     pub fn handle_bind_request(
         request_packet: &LdapAttribute,
-    ) -> Result<Option<LdapAttribute>, LdapError> {
+    ) -> Result<Vec<LdapAttribute>, LdapError> {
         let message_id_bytes = match &request_packet.value {
             LdapValue::Primitive(_) => todo!(),
             LdapValue::Constructed(attributes) => match attributes.first().unwrap().value.clone() {
@@ -115,12 +114,12 @@ impl Server {
         let bind_response_packet =
             LdapAttribute::new_packet(message_id, vec![bind_response_attribute]);
 
-        Ok(Some(bind_response_packet))
+        Ok(vec![bind_response_packet])
     }
 
     pub fn handle_unbind_request(
         request_packet: &LdapAttribute,
-    ) -> Result<Option<LdapAttribute>, LdapError> {
+    ) -> Result<Vec<LdapAttribute>, LdapError> {
         let message_id_bytes = match &request_packet.value {
             LdapValue::Primitive(_) => todo!(),
             LdapValue::Constructed(attributes) => match attributes.first().unwrap().value.clone() {
@@ -141,12 +140,12 @@ impl Server {
         let bind_response_packet =
             LdapAttribute::new_packet(message_id, vec![bind_response_attribute]);
 
-        Ok(Some(bind_response_packet))
+        Ok(vec![bind_response_packet])
     }
 
     pub fn handle_search_request(
         request_packet: &LdapAttribute,
-    ) -> Result<Option<LdapAttribute>, LdapError> {
+    ) -> Result<Vec<LdapAttribute>, LdapError> {
         let message_id_bytes = match &request_packet.value {
             LdapValue::Primitive(_) => todo!(),
             LdapValue::Constructed(attributes) => match attributes.first().unwrap().value.clone() {
@@ -157,35 +156,48 @@ impl Server {
 
         let message_id = utils::bytes_to_i32(&message_id_bytes);
 
-        let search_done_attribute = LdapAttribute::new_result_attribute(
-            LdapOperation::SearchResultDone,
-            LdapResult::Success,
-            "",
-            "",
+        let search_entry_packet = LdapAttribute::new_packet(
+            message_id,
+            vec![LdapAttribute::new(
+                {
+                    Tag::Application {
+                        operation: LdapOperation::SearchResultEntry,
+                        is_constructed: true,
+                    }
+                },
+                LdapValue::Constructed(vec![
+                    LdapAttribute::new(
+                        Tag::Universal {
+                            data_type: UniversalDataType::OctetString,
+                            is_constructed: false,
+                        },
+                        LdapValue::Primitive(
+                            "cn=testuser,cn=Users,dc=dev,dc=company,dc=com"
+                                .as_bytes()
+                                .to_vec(),
+                        ),
+                    ),
+                    LdapAttribute::new(
+                        Tag::Universal {
+                            data_type: UniversalDataType::Sequence,
+                            is_constructed: true,
+                        },
+                        LdapValue::Constructed(Vec::new()),
+                    ),
+                ]),
+            )],
         );
 
-        let search_done_packet = LdapAttribute::new_packet(message_id, vec![search_done_attribute]);
+        let search_done_packet = LdapAttribute::new_packet(
+            message_id,
+            vec![LdapAttribute::new_result_attribute(
+                LdapOperation::SearchResultDone,
+                LdapResult::Success,
+                "",
+                "",
+            )],
+        );
 
-        Ok(Some(search_done_packet))
-
-        /*
-        var searchRequest = requestPacket.ChildAttributes.SingleOrDefault(o => o.LdapOperation == LdapOperation.SearchRequest);
-           var filter = searchRequest.ChildAttributes[6];
-
-           if ((LdapFilterChoice)filter.ContextType == LdapFilterChoice.equalityMatch && filter.ChildAttributes[0].GetValue<String>() == "sAMAccountName" && filter.ChildAttributes[1].GetValue<String>() == "testuser") // equalityMatch
-           {
-               var responseEntryPacket = new LdapPacket(requestPacket.MessageId);
-               var searchResultEntry = new LdapAttribute(LdapOperation.SearchResultEntry);
-               searchResultEntry.ChildAttributes.Add(new LdapAttribute(UniversalDataType.OctetString, "cn=testuser,cn=Users,dc=dev,dc=company,dc=com"));
-               searchResultEntry.ChildAttributes.Add(new LdapAttribute(UniversalDataType.Sequence));
-               responseEntryPacket.ChildAttributes.Add(searchResultEntry);
-               var responsEntryBytes = responseEntryPacket.GetBytes();
-               stream.Write(responsEntryBytes, 0, responsEntryBytes.Length);
-           }
-
-           var responseDonePacket = new LdapPacket(requestPacket.MessageId);
-           responseDonePacket.ChildAttributes.Add(new LdapResultAttribute(LdapOperation.SearchResultDone, LdapResult.success));
-           var responseDoneBytes = responseDonePacket.GetBytes();
-           stream.Write(responseDoneBytes, 0, responseDoneBytes.Length); */
+        Ok(vec![search_entry_packet, search_done_packet])
     }
 }
