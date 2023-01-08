@@ -19,6 +19,13 @@ pub fn int_to_ber_length(value: i32) -> Vec<u8> {
     }
 }
 
+pub fn bytes_to_i32(bytes: &[u8]) -> i32 {
+    let mut long_length_bytes: [u8; 4] = [0; 4];
+    long_length_bytes[..bytes.len().into()].copy_from_slice(bytes);
+
+    BigEndian::read_i32(&long_length_bytes)
+}
+
 /// Convert ber length bytes to i32 and how many bytes were used
 pub fn ber_length_to_i32(ber_length_bytes: &[u8]) -> BerLengthResult {
     let short_length = ber_length_bytes[0] & 127;

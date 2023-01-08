@@ -1,6 +1,9 @@
 use byteorder::{BigEndian, ByteOrder};
 
-use crate::{ldap_error, tag::Tag, universal_data_type::UniversalDataType, utils};
+use crate::{
+    ldap_error, ldap_operation::LdapOperation, ldap_result::LdapResult, tag::Tag,
+    universal_data_type::UniversalDataType, utils,
+};
 
 // todo convert all unwraps etc to something which checks for errors...
 
@@ -44,6 +47,45 @@ impl LdapAttribute {
             },
             value: LdapValue::Constructed(packet_attributes),
         }
+    }
+
+    // shortcut for creating eg a bind response
+    pub fn new_result_attribute(operation: LdapOperation, result: LdapResult) -> Self {
+        let result_code_attribute = LdapAttribute::new(
+            Tag::Universal {
+                data_type: UniversalDataType::Enumerated,
+                is_constructed: false,
+            },
+            LdapValue::Primitive([result as u8].to_vec()),
+        );
+
+        let matched_dn_attribute = LdapAttribute::new(
+            Tag::Universal {
+                data_type: UniversalDataType::OctetString,
+                is_constructed: false,
+            },
+            LdapValue::Primitive(Vec::new()), // eeh..
+        );
+
+        let diagnostic_message_attribute = LdapAttribute::new(
+            Tag::Universal {
+                data_type: UniversalDataType::OctetString,
+                is_constructed: false,
+            },
+            LdapValue::Primitive(Vec::new()), // eeh..
+        );
+
+        LdapAttribute::new(
+            Tag::Application {
+                operation: operation,
+                is_constructed: true,
+            },
+            LdapValue::Constructed(vec![
+                result_code_attribute,
+                matched_dn_attribute,
+                diagnostic_message_attribute,
+            ]),
+        )
     }
 
     pub fn get_bytes(&self) -> Vec<u8> {
@@ -136,6 +178,10 @@ impl LdapAttribute {
                 .unwrap();
                 LdapValue::Constructed(foo)
             } else {
+                let value_bytes =
+                    &attribute_bytes[position..(position + attribute_value_length as usize)];
+
+                println!("value: {:?}", value_bytes);
                 LdapValue::Primitive(
                     attribute_bytes[position..(position + attribute_value_length as usize)]
                         .to_vec(),
@@ -358,41 +404,8 @@ mod tests {
     fn test_get_bytes_bind_response() {
         let expected_bytes = hex::decode("300f02040000000161070a010004000400").unwrap();
 
-        let result_code_attribute = LdapAttribute::new(
-            Tag::Universal {
-                data_type: UniversalDataType::Enumerated,
-                is_constructed: false,
-            },
-            LdapValue::Primitive([LdapResult::Success as u8].to_vec()), // eeh..
-        );
-
-        let matched_dn_attribute = LdapAttribute::new(
-            Tag::Universal {
-                data_type: UniversalDataType::OctetString,
-                is_constructed: false,
-            },
-            LdapValue::Primitive(Vec::new()), // eeh..
-        );
-
-        let diagnostic_message_attribute = LdapAttribute::new(
-            Tag::Universal {
-                data_type: UniversalDataType::OctetString,
-                is_constructed: false,
-            },
-            LdapValue::Primitive(Vec::new()), // eeh..
-        );
-
-        let bind_response_attribute = LdapAttribute::new(
-            Tag::Application {
-                operation: LdapOperation::BindResponse,
-                is_constructed: true,
-            },
-            LdapValue::Constructed(vec![
-                result_code_attribute,
-                matched_dn_attribute,
-                diagnostic_message_attribute,
-            ]), // eeh..
-        );
+        let bind_response_attribute =
+            LdapAttribute::new_result_attribute(LdapOperation::BindResponse, LdapResult::Success);
 
         let packet = LdapAttribute::new_packet(1, vec![bind_response_attribute]);
 

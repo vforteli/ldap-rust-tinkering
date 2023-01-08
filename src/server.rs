@@ -10,8 +10,7 @@ use crate::{
     ldap_attribute::{LdapAttribute, LdapValue},
     ldap_operation::LdapOperation,
     ldap_result::LdapResult,
-    tag::Tag,
-    universal_data_type::UniversalDataType,
+    utils,
 };
 
 pub struct Server {}
@@ -61,74 +60,29 @@ impl Server {
                     }
                 };
 
-                let result_code_attribute = LdapAttribute::new(
-                    Tag::Universal {
-                        data_type: UniversalDataType::Enumerated,
-                        is_constructed: false,
-                    },
-                    LdapValue::Primitive([LdapResult::Success as u8].to_vec()), // eeh..
+                println!("messageid: {:?}", message_id);
+
+                let foo = utils::bytes_to_i32(&message_id);
+                println!("got messageid {}", foo);
+
+                let bind_response_attribute = LdapAttribute::new_result_attribute(
+                    LdapOperation::BindResponse,
+                    LdapResult::Success,
                 );
 
-                let matched_dn_attribute = LdapAttribute::new(
-                    Tag::Universal {
-                        data_type: UniversalDataType::OctetString,
-                        is_constructed: false,
-                    },
-                    LdapValue::Primitive(Vec::new()), // eeh..
-                );
-
-                let diagnostic_message_attribute = LdapAttribute::new(
-                    Tag::Universal {
-                        data_type: UniversalDataType::OctetString,
-                        is_constructed: false,
-                    },
-                    LdapValue::Primitive(Vec::new()), // eeh..
-                );
-
-                let bind_response_attribute = LdapAttribute::new(
-                    Tag::Application {
-                        operation: LdapOperation::BindResponse,
-                        is_constructed: true,
-                    },
-                    LdapValue::Constructed(vec![
-                        result_code_attribute,
-                        matched_dn_attribute,
-                        diagnostic_message_attribute,
-                    ]), // eeh..
-                );
-
-                let id = BigEndian::read_i32(&message_id);
-
-                // should use the message id of the request
                 let bind_response_packet =
-                    LdapAttribute::new_packet(id, vec![bind_response_attribute]);
-
-                /*
-
-                public LdapResultAttribute(LdapOperation operation, LdapResult result, string matchedDN = "", string diagnosticMessage = "") : base(operation)
-                       {
-                           ChildAttributes.Add(new LdapAttribute(UniversalDataType.Enumerated, (byte)result));
-                           ChildAttributes.Add(new LdapAttribute(UniversalDataType.OctetString, matchedDN));
-                           ChildAttributes.Add(new LdapAttribute(UniversalDataType.OctetString, diagnosticMessage));
-                           // todo add referral if needed
-                           // todo bindresponse can contain more child attributes...
-                       }
-
-
-
-                                    var responsePacket = new LdapPacket(requestPacket.MessageId);
-                               responsePacket.ChildAttributes.Add(new LdapResultAttribute(LdapOperation.BindResponse, response));
-                               var responseBytes = responsePacket.GetBytes();
-                               stream.Write(responseBytes, 0, responseBytes.Length);
-                               return response == LdapResult.success; */
+                    LdapAttribute::new_packet(1, vec![bind_response_attribute]);
 
                 let response_bytes = bind_response_packet.get_bytes();
+
+                println!("response bytes: {:?}", response_bytes);
 
                 socket
                     .write_all(&response_bytes)
                     .await
                     .expect("failed to write data to socket");
-                // }
+
+                socket.flush().await.expect("hu?");
             });
         }
     }
