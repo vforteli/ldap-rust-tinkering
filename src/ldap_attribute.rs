@@ -1,5 +1,3 @@
-use byteorder::{BigEndian, ByteOrder};
-
 use crate::{
     ldap_error, ldap_operation::LdapOperation, ldap_result::LdapResult, tag::Tag,
     universal_data_type::UniversalDataType, utils,
@@ -26,15 +24,12 @@ impl LdapAttribute {
 
     /// the ldap packet is just a specific type of attribute with a message id
     pub fn new_packet(message_id: i32, attributes: Vec<LdapAttribute>) -> Self {
-        let mut buffer: [u8; 4] = [0; 4];
-        BigEndian::write_i32(&mut buffer, message_id);
-
         let message_id_attribute = LdapAttribute::new(
             Tag::Universal {
                 data_type: UniversalDataType::Integer,
                 is_constructed: false,
             },
-            LdapValue::Primitive(buffer.to_vec()),
+            LdapValue::Primitive(i32::to_be_bytes(message_id).to_vec()),
         );
 
         let mut packet_attributes = vec![message_id_attribute];
@@ -201,8 +196,6 @@ impl LdapAttribute {
 #[cfg(test)]
 mod tests {
 
-    use byteorder::{BigEndian, ByteOrder};
-
     use crate::{
         ldap_operation::LdapOperation, ldap_result::LdapResult,
         universal_data_type::UniversalDataType,
@@ -308,15 +301,12 @@ mod tests {
     fn test_get_bytes_integer_max() {
         let expected_bytes = hex::decode("02047fffffff").unwrap();
 
-        let mut buffer: [u8; 4] = [0; 4];
-        BigEndian::write_i32(&mut buffer, i32::MAX);
-
         let attribute = LdapAttribute::new(
             Tag::Universal {
                 data_type: UniversalDataType::Integer,
                 is_constructed: false,
             },
-            LdapValue::Primitive(buffer.to_vec()), // eeh..
+            LdapValue::Primitive(i32::MAX.to_be_bytes().to_vec()), // eeh..
         );
 
         assert_eq!(attribute.get_bytes(), expected_bytes)

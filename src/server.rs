@@ -1,6 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-use byteorder::{BigEndian, ByteOrder};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
@@ -50,7 +49,7 @@ impl Server {
                 // just assuming this is a bind request for testing...
                 let request_packet = LdapAttribute::parse(&buf).unwrap();
 
-                let message_id = match request_packet.value {
+                let message_id_bytes = match request_packet.value {
                     LdapValue::Primitive(_) => todo!(),
                     LdapValue::Constructed(attributes) => {
                         match attributes.first().unwrap().value.clone() {
@@ -60,10 +59,7 @@ impl Server {
                     }
                 };
 
-                println!("messageid: {:?}", message_id);
-
-                let foo = utils::bytes_to_i32(&message_id);
-                println!("got messageid {}", foo);
+                let message_id = utils::bytes_to_i32(&message_id_bytes);
 
                 let bind_response_attribute = LdapAttribute::new_result_attribute(
                     LdapOperation::BindResponse,
@@ -71,7 +67,7 @@ impl Server {
                 );
 
                 let bind_response_packet =
-                    LdapAttribute::new_packet(1, vec![bind_response_attribute]);
+                    LdapAttribute::new_packet(message_id, vec![bind_response_attribute]);
 
                 let response_bytes = bind_response_packet.get_bytes();
 
