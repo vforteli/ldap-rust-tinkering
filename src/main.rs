@@ -15,5 +15,5 @@ async fn main() -> std::io::Result<()> {
     println!("Starting server...");
 
     let server = Server::new();
-    server.start_listening().await
+    server.start_listening(389).await
 }
