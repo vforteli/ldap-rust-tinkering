@@ -45,7 +45,12 @@ impl LdapAttribute {
     }
 
     // shortcut for creating eg a bind response
-    pub fn new_result_attribute(operation: LdapOperation, result: LdapResult) -> Self {
+    pub fn new_result_attribute(
+        operation: LdapOperation,
+        result: LdapResult,
+        matched_dn: &str,
+        diagnostic_message: &str,
+    ) -> Self {
         let result_code_attribute = LdapAttribute::new(
             Tag::Universal {
                 data_type: UniversalDataType::Enumerated,
@@ -59,7 +64,7 @@ impl LdapAttribute {
                 data_type: UniversalDataType::OctetString,
                 is_constructed: false,
             },
-            LdapValue::Primitive(Vec::new()), // eeh..
+            LdapValue::Primitive(matched_dn.as_bytes().to_vec()), // eeh..
         );
 
         let diagnostic_message_attribute = LdapAttribute::new(
@@ -67,7 +72,7 @@ impl LdapAttribute {
                 data_type: UniversalDataType::OctetString,
                 is_constructed: false,
             },
-            LdapValue::Primitive(Vec::new()), // eeh..
+            LdapValue::Primitive(diagnostic_message.as_bytes().to_vec()), // eeh..
         );
 
         LdapAttribute::new(
@@ -394,8 +399,12 @@ mod tests {
     fn test_get_bytes_bind_response() {
         let expected_bytes = hex::decode("300f02040000000161070a010004000400").unwrap();
 
-        let bind_response_attribute =
-            LdapAttribute::new_result_attribute(LdapOperation::BindResponse, LdapResult::Success);
+        let bind_response_attribute = LdapAttribute::new_result_attribute(
+            LdapOperation::BindResponse,
+            LdapResult::Success,
+            "",
+            "",
+        );
 
         let packet = LdapAttribute::new_packet(1, vec![bind_response_attribute]);
 

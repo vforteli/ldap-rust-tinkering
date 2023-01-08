@@ -45,6 +45,9 @@ impl Server {
                         return;
                     }
 
+                    let length_foo = utils::parse_ber_length_first_byte(buf[1]);
+                    println!("length: {:?}", length_foo);
+
                     let request_packet = LdapAttribute::parse(&buf).unwrap();
 
                     let response_packet = match &request_packet.value {
@@ -102,8 +105,12 @@ impl Server {
 
         let message_id = utils::bytes_to_i32(&message_id_bytes);
 
-        let bind_response_attribute =
-            LdapAttribute::new_result_attribute(LdapOperation::BindResponse, LdapResult::Success);
+        let bind_response_attribute = LdapAttribute::new_result_attribute(
+            LdapOperation::BindResponse,
+            LdapResult::Success,
+            "",
+            "",
+        );
 
         let bind_response_packet =
             LdapAttribute::new_packet(message_id, vec![bind_response_attribute]);
@@ -124,8 +131,12 @@ impl Server {
 
         let message_id = utils::bytes_to_i32(&message_id_bytes);
 
-        let bind_response_attribute =
-            LdapAttribute::new_result_attribute(LdapOperation::BindResponse, LdapResult::Success);
+        let bind_response_attribute = LdapAttribute::new_result_attribute(
+            LdapOperation::BindResponse,
+            LdapResult::Success,
+            "",
+            "",
+        );
 
         let bind_response_packet =
             LdapAttribute::new_packet(message_id, vec![bind_response_attribute]);
@@ -149,6 +160,8 @@ impl Server {
         let search_done_attribute = LdapAttribute::new_result_attribute(
             LdapOperation::SearchResultDone,
             LdapResult::Success,
+            "",
+            "",
         );
 
         let search_done_packet = LdapAttribute::new_packet(message_id, vec![search_done_attribute]);
