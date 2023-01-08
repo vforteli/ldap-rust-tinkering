@@ -3,10 +3,7 @@ use std::{
     vec,
 };
 
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpListener,
-};
+use tokio::{io::AsyncWriteExt, net::TcpListener};
 
 use crate::{
     ldap_attribute::{LdapAttribute, LdapValue},
@@ -32,30 +29,16 @@ impl Server {
         println!("Listening on {}", address);
 
         loop {
-            let (mut socket, _) = listener.accept().await?;
-            println!("Got client from {:?}", socket.peer_addr());
+            let (mut socket, peer_address) = listener.accept().await?;
+            println!("Got client from {:?}", peer_address);
 
             // todo threadpool
             tokio::spawn(async move {
-                let mut buf = vec![0; 1024 * 10];
-
-                // todo uh.. should probably exit this loop at some point...
-                loop {
-                    let n = socket
-                        .read(&mut buf)
+                while let Some(request_packet) =
+                    LdapAttribute::parse_packet_from_stream(&mut socket)
                         .await
-                        .expect("failed to read data from socket");
-
-                    if n == 0 {
-                        println!("{:?} remote closed connection", socket.peer_addr());
-                        return;
-                    }
-
-                    let length_foo = utils::parse_ber_length_first_byte(buf[1]);
-                    println!("length: {:?}", length_foo);
-
-                    let request_packet = LdapAttribute::parse(&buf).unwrap();
-
+                        .unwrap()
+                {
                     let response_packets = match &request_packet.value {
                         LdapValue::Primitive(_) => Err(LdapError::UnexpectedPacket),
                         LdapValue::Constructed(attributes) => {
@@ -87,6 +70,8 @@ impl Server {
                             .expect("failed to write data to socket");
                     }
                 }
+
+                println!("socket to {:?} closed by peer", peer_address);
             });
         }
     }

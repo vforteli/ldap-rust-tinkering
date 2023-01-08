@@ -1,6 +1,12 @@
+use tokio::{io::AsyncReadExt, net::TcpStream};
+
 use crate::{
-    ldap_error, ldap_operation::LdapOperation, ldap_result::LdapResult, tag::Tag,
-    universal_data_type::UniversalDataType, utils,
+    ldap_error::{self},
+    ldap_operation::LdapOperation,
+    ldap_result::LdapResult,
+    tag::Tag,
+    universal_data_type::UniversalDataType,
+    utils,
 };
 
 // todo convert all unwraps etc to something which checks for errors...
@@ -116,7 +122,44 @@ impl LdapAttribute {
         }
     }
 
-    pub fn parse(packet_bytes: &[u8]) -> Result<Self, ldap_error::LdapError> {
+    pub async fn parse_packet_from_stream(
+        stream: &mut TcpStream,
+    ) -> Result<Option<Self>, ldap_error::LdapError> {
+        let mut packet_bytes: Vec<u8> = vec![0; 1024];
+
+        // this all will of course explode in case of bad fragmentation
+        // this could for example first read 2 bytes to get the tag and first byte of length
+        // then figure out of it is long or short notation and read length... then read the rest of the packet with read_exact
+        let n = stream.read(&mut packet_bytes).await.unwrap();
+
+        if n == 0 {
+            return Ok(None);
+        }
+
+        let tag: Tag = packet_bytes[0].into();
+        println!("got tag! {:?}", tag);
+
+        let length = utils::ber_length_to_i32(&packet_bytes[1..]);
+
+        if length.value as usize > packet_bytes.len() {
+            let bytes_missing =
+                (length.value as usize + 1 + length.bytes_consumed) - packet_bytes.len();
+
+            let mut buffer: Vec<u8> = vec![0; bytes_missing];
+            stream.read_exact(&mut buffer).await.expect("wut?");
+            packet_bytes.extend(buffer);
+        }
+
+        let value_bytes = &packet_bytes
+            [(1 + length.bytes_consumed)..(1 + length.bytes_consumed + length.value as usize)];
+
+        Ok(Some(LdapAttribute {
+            tag,
+            value: LdapValue::Constructed(Self::parse_attributes(&value_bytes).unwrap()),
+        }))
+    }
+
+    pub fn parse_packet(packet_bytes: &[u8]) -> Result<Self, ldap_error::LdapError> {
         let tag: Tag = packet_bytes[0].into();
         println!("got tag! {:?}", tag);
 
@@ -321,7 +364,7 @@ mod tests {
     fn test_parse_bind_request_and_get_bytes() {
         let bind_request_bytes = hex::decode("304c0204000000016044020103042d636e3d62696e64557365722c636e3d55736572732c64633d6465762c64633d636f6d70616e792c64633d636f6d801062696e645573657250617373776f7264").unwrap();
 
-        let packet = LdapAttribute::parse(&bind_request_bytes).unwrap();
+        let packet = LdapAttribute::parse_packet(&bind_request_bytes).unwrap();
 
         match packet.tag {
             Tag::Universal {
