@@ -1,8 +1,7 @@
-use byteorder::{BigEndian, ByteOrder};
-
+#[derive(Debug)]
 pub struct BerLengthResult {
-    value: i32,
-    bytes_consumed: usize,
+    pub value: i32,
+    pub bytes_consumed: usize,
 }
 
 pub fn int_to_ber_length(value: i32) -> Vec<u8> {
@@ -10,32 +9,61 @@ pub fn int_to_ber_length(value: i32) -> Vec<u8> {
         [value as u8].to_vec()
     } else {
         // wasting precious bytes when this could be represented with the 0 bytes truncated
-        let mut bytes: [u8; 5] = [0; 5];
-        bytes[0] = 4 + 128;
-        BigEndian::write_i32(&mut bytes[1..5], value);
-
-        bytes.to_vec()
+        let mut bytes = vec![4 + 128];
+        bytes.extend(i32::to_be_bytes(value));
+        bytes
     }
 }
 
-/// Convert ber length bytes to i32 and how many bytes were used
-pub fn ber_length_to_i32(ber_length_bytes: Vec<u8>) -> BerLengthResult {
-    let short_length = ber_length_bytes[0] & 127;
+pub fn bytes_to_i32(bytes: &[u8]) -> i32 {
+    let mut long_length_bytes: [u8; 4] = [0; 4];
+    long_length_bytes[(4 - bytes.len())..].copy_from_slice(bytes);
 
-    match ber_length_bytes[0] >> 7 {
-        1 => {
-            let length_bytes = &ber_length_bytes[1..(short_length + 1).into()];
-            let mut long_length_bytes: [u8; 4] = [0; 4];
-            long_length_bytes[..short_length.into()].copy_from_slice(&length_bytes);
+    i32::from_be_bytes(long_length_bytes)
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum LengthFormat {
+    /// Long notation contains the count of subsequent bytes used for the length
+    Long(i32),
+
+    /// Short notation is the actual length
+    Short(i32),
+}
+
+/// Parse first byte in a ber encoded length thingy to determine if it is short or long format
+pub fn parse_ber_length_first_byte(byte: u8) -> LengthFormat {
+    let short_length = byte & 127;
+
+    match byte >> 7 {
+        1 => LengthFormat::Long(short_length.into()),
+        _ => LengthFormat::Short(short_length.into()),
+    }
+}
+
+/// Parse ber length long format from remaining bytes
+pub fn parse_ber_length(bytes: &[u8]) -> i32 {
+    let mut long_length_bytes: [u8; 4] = [0; 4];
+    long_length_bytes[..bytes.len().into()].copy_from_slice(bytes);
+    i32::from_be_bytes(long_length_bytes)
+}
+
+/// Convert ber length bytes to i32 and how many bytes were used
+pub fn ber_length_to_i32(ber_length_bytes: &[u8]) -> BerLengthResult {
+    match parse_ber_length_first_byte(ber_length_bytes[0]) {
+        LengthFormat::Long(long_length) => {
+            let length_bytes = &ber_length_bytes[1..(long_length + 1).try_into().unwrap()];
+
+            let value = parse_ber_length(length_bytes);
 
             BerLengthResult {
-                bytes_consumed: (1 + short_length).into(),
-                value: BigEndian::read_i32(&long_length_bytes),
+                bytes_consumed: (1 + long_length).try_into().unwrap(),
+                value,
             }
         }
-        _ => BerLengthResult {
+        LengthFormat::Short(short_length) => BerLengthResult {
             bytes_consumed: 1,
-            value: short_length.into(),
+            value: short_length.try_into().unwrap(),
         },
     }
 }
@@ -43,6 +71,13 @@ pub fn ber_length_to_i32(ber_length_bytes: Vec<u8>) -> BerLengthResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_bytes_to_i32() {
+        assert_eq!(1, bytes_to_i32(&vec![1]));
+        assert_eq!(255, bytes_to_i32(&vec![255]));
+        assert_eq!(256, bytes_to_i32(&vec![1, 0]));
+    }
 
     #[test]
     fn test_ber_length_to_i32_short_01() {
@@ -74,7 +109,7 @@ mod tests {
     }
 
     fn test_ber_length_to_i32(hex_bytes: &str, expected_i32: i32, bytes_used: usize) {
-        let actual = ber_length_to_i32(hex::decode(hex_bytes).unwrap());
+        let actual = ber_length_to_i32(&hex::decode(hex_bytes).unwrap());
 
         assert_eq!(actual.value, expected_i32);
         assert_eq!(actual.bytes_consumed, bytes_used);

@@ -1,5 +1,5 @@
 // Ldap operations from https://tools.ietf.org/html/rfc4511#section-4.2
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 #[repr(u8)]
 pub enum LdapOperation {
     BindRequest = 0,
