@@ -133,7 +133,6 @@ impl LdapAttribute {
         return match reader.read_u8().await {
             Ok(tag_byte) => {
                 let tag: Tag = tag_byte.into();
-                println!("got tag! {:?}", tag);
 
                 let length: usize =
                     match utils::parse_ber_length_first_byte(reader.read_u8().await.unwrap()) {
@@ -164,19 +163,11 @@ impl LdapAttribute {
 
     pub fn parse_packet(packet_bytes: &[u8]) -> Result<Self, ldap_error::LdapError> {
         let tag: Tag = packet_bytes[0].into();
-        println!("got tag! {:?}", tag);
 
         let length = utils::ber_length_to_i32(&packet_bytes[1..]);
-        println!("length stuff! {:?}", length);
 
         let value_bytes = &packet_bytes
             [(1 + length.bytes_consumed)..(1 + length.bytes_consumed + length.value as usize)];
-
-        if length.value > value_bytes.len().try_into().unwrap() {
-            return Err(ldap_error::LdapError::InvalidLength);
-        }
-
-        println!("packet length {}", value_bytes.len());
 
         Ok(LdapAttribute {
             tag,
@@ -217,25 +208,26 @@ impl LdapAttribute {
             };
 
             let value = if is_constructed {
-                let foo = Self::parse_attributes(
-                    &attribute_bytes[position..(position + attribute_value_length as usize)]
-                        .to_vec(),
+                LdapValue::Constructed(
+                    Self::parse_attributes(
+                        &attribute_bytes[position..(position + attribute_value_length as usize)]
+                            .to_vec(),
+                    )
+                    .unwrap(),
                 )
-                .unwrap();
-                LdapValue::Constructed(foo)
             } else {
                 let value_bytes =
                     &attribute_bytes[position..(position + attribute_value_length as usize)];
 
-                println!("value: {:?}", value_bytes);
+                println!("tag: {:?}, value: {:?}", tag, value_bytes);
+
                 LdapValue::Primitive(
                     attribute_bytes[position..(position + attribute_value_length as usize)]
                         .to_vec(),
                 )
             };
 
-            let attribute = LdapAttribute::new(tag, value);
-            attributes.push(attribute);
+            attributes.push(LdapAttribute::new(tag, value));
 
             position += attribute_value_length as usize;
         }

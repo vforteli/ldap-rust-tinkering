@@ -34,6 +34,8 @@ impl Server {
 
             // todo threadpool
             tokio::spawn(async move {
+                let mut is_client_bound = false;
+
                 while let Some(request_packet) =
                     LdapAttribute::parse_packet_from_stream(&mut socket)
                         .await
@@ -52,7 +54,11 @@ impl Server {
                                     }
                                     LdapOperation::UnbindRequest => Ok(Vec::new()),
                                     LdapOperation::SearchRequest => {
+                                        // if (is_client_bound) {
                                         Self::handle_search_request(&request_packet)
+                                        // } else {
+                                        //     Err(LdapError)
+                                        // }
                                     }
                                     _ => Err(LdapError::NotImplementedYet),
                                 },
@@ -87,17 +93,46 @@ impl Server {
             },
         };
 
-        let message_id = utils::bytes_to_i32(&message_id_bytes);
+        let credendials = if let LdapValue::Constructed(v) = &request_packet.value {
+            if let LdapValue::Constructed(bind_attributes) = &v[1].value {
+                if let (
+                    LdapValue::Primitive(username_bytes),
+                    LdapValue::Primitive(password_bytes),
+                ) = (&bind_attributes[1].value, &bind_attributes[2].value)
+                {
+                    Some((
+                        String::from_utf8(username_bytes.clone()).unwrap(),
+                        String::from_utf8(password_bytes.clone()).unwrap(),
+                    ))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
-        let bind_response_attribute = LdapAttribute::new_result_attribute(
-            LdapOperation::BindResponse,
-            LdapResult::Success,
-            "",
-            "",
+        let result = if let Some((username, password)) = credendials {
+            if username == "fooo" && password == "ooof" {
+                LdapResult::Success
+            } else {
+                LdapResult::InvalidCredentials
+            }
+        } else {
+            LdapResult::InvalidCredentials
+        };
+
+        let bind_response_packet = LdapAttribute::new_packet(
+            utils::bytes_to_i32(&message_id_bytes),
+            vec![LdapAttribute::new_result_attribute(
+                LdapOperation::BindResponse,
+                result,
+                "",
+                "",
+            )],
         );
-
-        let bind_response_packet =
-            LdapAttribute::new_packet(message_id, vec![bind_response_attribute]);
 
         Ok(vec![bind_response_packet])
     }
