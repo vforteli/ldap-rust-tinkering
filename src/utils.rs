@@ -25,12 +25,13 @@ pub fn bytes_to_i32(bytes: &[u8]) -> i32 {
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum LengthFormat {
     /// Long notation contains the count of subsequent bytes used for the length
-    Long(usize),
+    Long(i32),
 
     /// Short notation is the actual length
-    Short(usize),
+    Short(i32),
 }
 
+/// Parse first byte in a ber encoded length thingy to determine if it is short or long format
 pub fn parse_ber_length_first_byte(byte: u8) -> LengthFormat {
     let short_length = byte & 127;
 
@@ -40,17 +41,24 @@ pub fn parse_ber_length_first_byte(byte: u8) -> LengthFormat {
     }
 }
 
+/// Parse ber length long format from remaining bytes
+pub fn parse_ber_length(bytes: &[u8]) -> i32 {
+    let mut long_length_bytes: [u8; 4] = [0; 4];
+    long_length_bytes[..bytes.len().into()].copy_from_slice(bytes);
+    i32::from_be_bytes(long_length_bytes)
+}
+
 /// Convert ber length bytes to i32 and how many bytes were used
 pub fn ber_length_to_i32(ber_length_bytes: &[u8]) -> BerLengthResult {
     match parse_ber_length_first_byte(ber_length_bytes[0]) {
         LengthFormat::Long(long_length) => {
-            let length_bytes = &ber_length_bytes[1..(long_length + 1).into()];
-            let mut long_length_bytes: [u8; 4] = [0; 4];
-            long_length_bytes[..long_length.into()].copy_from_slice(&length_bytes);
+            let length_bytes = &ber_length_bytes[1..(long_length + 1).try_into().unwrap()];
+
+            let value = parse_ber_length(length_bytes);
 
             BerLengthResult {
-                bytes_consumed: (1 + long_length).into(),
-                value: i32::from_be_bytes(long_length_bytes),
+                bytes_consumed: (1 + long_length).try_into().unwrap(),
+                value,
             }
         }
         LengthFormat::Short(short_length) => BerLengthResult {

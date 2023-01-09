@@ -1,4 +1,7 @@
-use tokio::{io::AsyncReadExt, net::TcpStream};
+use tokio::{
+    io::{AsyncReadExt, BufReader},
+    net::TcpStream,
+};
 
 use crate::{
     ldap_error::{self},
@@ -125,38 +128,38 @@ impl LdapAttribute {
     pub async fn parse_packet_from_stream(
         stream: &mut TcpStream,
     ) -> Result<Option<Self>, ldap_error::LdapError> {
-        let mut packet_bytes: Vec<u8> = vec![0; 1024];
+        let mut reader = BufReader::new(stream);
 
-        // this all will of course explode in case of bad fragmentation
-        // this could for example first read 2 bytes to get the tag and first byte of length
-        // then figure out of it is long or short notation and read length... then read the rest of the packet with read_exact
-        let n = stream.read(&mut packet_bytes).await.unwrap();
+        return match reader.read_u8().await {
+            Ok(tag_byte) => {
+                let tag: Tag = tag_byte.into();
+                println!("got tag! {:?}", tag);
 
-        if n == 0 {
-            return Ok(None);
-        }
+                let length: usize =
+                    match utils::parse_ber_length_first_byte(reader.read_u8().await.unwrap()) {
+                        utils::LengthFormat::Long(long_length_bytes_count) => {
+                            let mut length_bytes =
+                                vec![0; long_length_bytes_count.try_into().unwrap()];
+                            reader.read_exact(&mut length_bytes).await.unwrap();
+                            utils::parse_ber_length(&length_bytes)
+                        }
+                        utils::LengthFormat::Short(short_length) => short_length,
+                    }
+                    .try_into()
+                    .unwrap();
 
-        let tag: Tag = packet_bytes[0].into();
-        println!("got tag! {:?}", tag);
+                let mut packet_value_bytes = vec![0; length];
+                reader.read_exact(&mut packet_value_bytes).await.unwrap();
 
-        let length = utils::ber_length_to_i32(&packet_bytes[1..]);
-
-        if length.value as usize > packet_bytes.len() {
-            let bytes_missing =
-                (length.value as usize + 1 + length.bytes_consumed) - packet_bytes.len();
-
-            let mut buffer: Vec<u8> = vec![0; bytes_missing];
-            stream.read_exact(&mut buffer).await.expect("wut?");
-            packet_bytes.extend(buffer);
-        }
-
-        let value_bytes = &packet_bytes
-            [(1 + length.bytes_consumed)..(1 + length.bytes_consumed + length.value as usize)];
-
-        Ok(Some(LdapAttribute {
-            tag,
-            value: LdapValue::Constructed(Self::parse_attributes(&value_bytes).unwrap()),
-        }))
+                Ok(Some(LdapAttribute {
+                    tag,
+                    value: LdapValue::Constructed(
+                        Self::parse_attributes(&packet_value_bytes).unwrap(),
+                    ),
+                }))
+            }
+            Err(_) => Ok(None),
+        };
     }
 
     pub fn parse_packet(packet_bytes: &[u8]) -> Result<Self, ldap_error::LdapError> {
