@@ -1,10 +1,12 @@
 use std::fmt;
 
+// todo.. convert this into something sensible... should at least be able to convert to Error.. maybe
 #[derive(Debug, Clone)]
 pub enum LdapError {
     InvalidLength,
     UnexpectedPacket,
     NotImplementedYet,
+    MalformedPacket,
 }
 
 impl fmt::Display for LdapError {
@@ -15,6 +17,10 @@ impl fmt::Display for LdapError {
             LdapError::NotImplementedYet => write!(
                 f,
                 "Someone has been lazy and this operation has not been implemented yet..."
+            ),
+            LdapError::MalformedPacket => write!(
+                f,
+                "Malformed packet, expected some attribute which didnt exist :/"
             ),
         }
     }

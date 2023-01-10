@@ -4,15 +4,9 @@ use tokio::{
 };
 
 use crate::{
-    ldap_error::{self},
-    ldap_operation::LdapOperation,
-    ldap_result::LdapResult,
-    tag::Tag,
-    universal_data_type::UniversalDataType,
-    utils,
+    ldap_error::LdapError, ldap_operation::LdapOperation, ldap_result::LdapResult, tag::Tag,
+    universal_data_type::UniversalDataType, utils,
 };
-
-// todo convert all unwraps etc to something which checks for errors...
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum LdapValue {
@@ -127,41 +121,46 @@ impl LdapAttribute {
 
     pub async fn parse_packet_from_stream(
         stream: &mut TcpStream,
-    ) -> Result<Option<Self>, ldap_error::LdapError> {
+    ) -> Result<Option<Self>, LdapError> {
         let mut reader = BufReader::new(stream);
 
         return match reader.read_u8().await {
             Ok(tag_byte) => {
                 let tag: Tag = tag_byte.into();
 
-                let length: usize =
-                    match utils::parse_ber_length_first_byte(reader.read_u8().await.unwrap()) {
-                        utils::LengthFormat::Long(long_length_bytes_count) => {
-                            let mut length_bytes =
-                                vec![0; long_length_bytes_count.try_into().unwrap()];
-                            reader.read_exact(&mut length_bytes).await.unwrap();
-                            utils::parse_ber_length(&length_bytes)
-                        }
-                        utils::LengthFormat::Short(short_length) => short_length,
+                let length: usize = match utils::parse_ber_length_first_byte(
+                    reader
+                        .read_u8()
+                        .await
+                        .map_err(|e| LdapError::NotImplementedYet)?,
+                ) {
+                    utils::LengthFormat::Long(long_length_bytes_count) => {
+                        let mut length_bytes = vec![0; long_length_bytes_count as usize];
+                        reader
+                            .read_exact(&mut length_bytes)
+                            .await
+                            .map_err(|e| LdapError::NotImplementedYet)?;
+                        utils::parse_ber_length(&length_bytes)
                     }
-                    .try_into()
-                    .unwrap();
+                    utils::LengthFormat::Short(short_length) => short_length,
+                } as usize;
 
                 let mut packet_value_bytes = vec![0; length];
-                reader.read_exact(&mut packet_value_bytes).await.unwrap();
+                reader
+                    .read_exact(&mut packet_value_bytes)
+                    .await
+                    .map_err(|e| LdapError::UnexpectedPacket)?;
 
                 Ok(Some(LdapAttribute {
                     tag,
-                    value: LdapValue::Constructed(
-                        Self::parse_attributes(&packet_value_bytes).unwrap(),
-                    ),
+                    value: LdapValue::Constructed(Self::parse_attributes(&packet_value_bytes)?),
                 }))
             }
             Err(_) => Ok(None),
         };
     }
 
-    pub fn parse_packet(packet_bytes: &[u8]) -> Result<Self, ldap_error::LdapError> {
+    pub fn parse_packet(packet_bytes: &[u8]) -> Result<Self, LdapError> {
         let tag: Tag = packet_bytes[0].into();
 
         let length = utils::ber_length_to_i32(&packet_bytes[1..]);
@@ -171,18 +170,18 @@ impl LdapAttribute {
 
         Ok(LdapAttribute {
             tag,
-            value: LdapValue::Constructed(Self::parse_attributes(&value_bytes).unwrap()),
+            value: LdapValue::Constructed(Self::parse_attributes(&value_bytes)?),
         })
     }
 
-    fn parse_attributes(attribute_bytes: &[u8]) -> Result<Vec<Self>, ldap_error::LdapError> {
+    fn parse_attributes(attribute_bytes: &[u8]) -> Result<Vec<Self>, LdapError> {
         let mut attributes: Vec<LdapAttribute> = Vec::new();
 
         let mut position: usize = 0;
 
         while position < attribute_bytes.len() {
             let tag: Tag = attribute_bytes[position].into();
-            println!("got tag! {:?}", tag);
+
             position += 1;
 
             let length = utils::ber_length_to_i32(&attribute_bytes[position..]);
@@ -207,24 +206,13 @@ impl LdapAttribute {
                 Tag::Private => todo!(),
             };
 
+            let value_bytes =
+                &attribute_bytes[position..(position + attribute_value_length as usize)];
+
             let value = if is_constructed {
-                LdapValue::Constructed(
-                    Self::parse_attributes(
-                        &attribute_bytes[position..(position + attribute_value_length as usize)]
-                            .to_vec(),
-                    )
-                    .unwrap(),
-                )
+                LdapValue::Constructed(Self::parse_attributes(&value_bytes.to_vec())?)
             } else {
-                let value_bytes =
-                    &attribute_bytes[position..(position + attribute_value_length as usize)];
-
-                println!("tag: {:?}, value: {:?}", tag, value_bytes);
-
-                LdapValue::Primitive(
-                    attribute_bytes[position..(position + attribute_value_length as usize)]
-                        .to_vec(),
-                )
+                LdapValue::Primitive(value_bytes.to_vec())
             };
 
             attributes.push(LdapAttribute::new(tag, value));

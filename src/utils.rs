@@ -1,3 +1,5 @@
+use crate::ldap_attribute::{LdapAttribute, LdapValue};
+
 #[derive(Debug)]
 pub struct BerLengthResult {
     pub value: i32,
@@ -52,19 +54,44 @@ pub fn parse_ber_length(bytes: &[u8]) -> i32 {
 pub fn ber_length_to_i32(ber_length_bytes: &[u8]) -> BerLengthResult {
     match parse_ber_length_first_byte(ber_length_bytes[0]) {
         LengthFormat::Long(long_length) => {
-            let length_bytes = &ber_length_bytes[1..(long_length + 1).try_into().unwrap()];
+            let length_bytes = &ber_length_bytes[1..(long_length + 1) as usize];
 
             let value = parse_ber_length(length_bytes);
 
             BerLengthResult {
-                bytes_consumed: (1 + long_length).try_into().unwrap(),
+                bytes_consumed: (1 + long_length) as usize,
                 value,
             }
         }
         LengthFormat::Short(short_length) => BerLengthResult {
             bytes_consumed: 1,
-            value: short_length.try_into().unwrap(),
+            value: short_length,
         },
+    }
+}
+
+pub fn dump_packet(packet: &LdapAttribute) {
+    dump_attribute_recursive(packet, 1)
+}
+
+fn dump_attribute_recursive(attribute: &LdapAttribute, depth: u8) {
+    let foo: Vec<u8> = Vec::new();
+
+    println!(
+        "{} tag: {:?}, value: {:?}",
+        ">".repeat(depth as usize),
+        attribute.tag,
+        if let LdapValue::Primitive(value) = &attribute.value {
+            value
+        } else {
+            &foo
+        }
+    );
+
+    if let LdapValue::Constructed(attributes) = &attribute.value {
+        for child_attribute in attributes {
+            dump_attribute_recursive(child_attribute, depth + 1)
+        }
     }
 }
 

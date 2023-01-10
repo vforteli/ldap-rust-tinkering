@@ -12,7 +12,7 @@ use crate::{
     ldap_result::LdapResult,
     tag::Tag,
     universal_data_type::UniversalDataType,
-    utils,
+    utils::{self, dump_packet},
 };
 
 pub struct Server {}
@@ -41,6 +41,8 @@ impl Server {
                         .await
                         .unwrap()
                 {
+                    dump_packet(&request_packet);
+
                     let response_packets = match &request_packet.value {
                         LdapValue::Primitive(_) => Err(LdapError::UnexpectedPacket),
                         LdapValue::Constructed(attributes) => {
@@ -67,13 +69,18 @@ impl Server {
                         }
                     };
 
-                    for packet in response_packets.unwrap() {
-                        let response_bytes = packet.get_bytes();
+                    match response_packets {
+                        Ok(response_packets) => {
+                            for packet in response_packets {
+                                let response_bytes = packet.get_bytes();
 
-                        socket
-                            .write_all(&response_bytes)
-                            .await
-                            .expect("failed to write data to socket");
+                                socket
+                                    .write_all(&response_bytes)
+                                    .await
+                                    .expect("failed to write data to socket");
+                            }
+                        }
+                        Err(e) => todo!(),
                     }
                 }
 
