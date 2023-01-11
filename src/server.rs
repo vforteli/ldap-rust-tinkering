@@ -34,7 +34,7 @@ impl Server {
 
             // todo threadpool
             tokio::spawn(async move {
-                let mut is_client_bound = false;
+                let mut _is_client_bound = false;
 
                 while let Some(request_packet) =
                     LdapAttribute::parse_packet_from_stream(&mut socket)
@@ -80,7 +80,10 @@ impl Server {
                                     .expect("failed to write data to socket");
                             }
                         }
-                        Err(e) => todo!(),
+                        Err(e) => println!(
+                            "Something went haywire getting response packet from handler?! {}",
+                            e
+                        ),
                     }
                 }
 
@@ -92,16 +95,8 @@ impl Server {
     pub fn handle_bind_request(
         request_packet: &LdapAttribute,
     ) -> Result<Vec<LdapAttribute>, LdapError> {
-        let message_id_bytes = match &request_packet.value {
-            LdapValue::Primitive(_) => todo!(),
-            LdapValue::Constructed(attributes) => match attributes.first().unwrap().value.clone() {
-                LdapValue::Primitive(value) => value,
-                LdapValue::Constructed(_) => todo!(),
-            },
-        };
-
-        let credendials = if let LdapValue::Constructed(v) = &request_packet.value {
-            if let LdapValue::Constructed(bind_attributes) = &v[1].value {
+        let credendials = if let LdapValue::Constructed(attributes) = &request_packet.value {
+            if let LdapValue::Constructed(bind_attributes) = &attributes[1].value {
                 if let (
                     LdapValue::Primitive(username_bytes),
                     LdapValue::Primitive(password_bytes),
@@ -121,18 +116,19 @@ impl Server {
             None
         };
 
-        let result = if let Some((username, password)) = credendials {
-            if username == "fooo" && password == "ooof" {
-                LdapResult::Success
-            } else {
-                LdapResult::InvalidCredentials
+        let result = match credendials {
+            Some((username, password)) => {
+                if username == "fooo" && password == "ooof" {
+                    LdapResult::Success
+                } else {
+                    LdapResult::InvalidCredentials
+                }
             }
-        } else {
-            LdapResult::InvalidCredentials
+            None => LdapResult::InvalidCredentials,
         };
 
         let bind_response_packet = LdapAttribute::new_packet(
-            utils::bytes_to_i32(&message_id_bytes),
+            Self::get_message_id(request_packet)?,
             vec![LdapAttribute::new_result_attribute(
                 LdapOperation::BindResponse,
                 result,
@@ -173,15 +169,7 @@ impl Server {
     pub fn handle_search_request(
         request_packet: &LdapAttribute,
     ) -> Result<Vec<LdapAttribute>, LdapError> {
-        let message_id_bytes = match &request_packet.value {
-            LdapValue::Primitive(_) => todo!(),
-            LdapValue::Constructed(attributes) => match attributes.first().unwrap().value.clone() {
-                LdapValue::Primitive(value) => value,
-                LdapValue::Constructed(_) => todo!(),
-            },
-        };
-
-        let message_id = utils::bytes_to_i32(&message_id_bytes);
+        let message_id = Self::get_message_id(request_packet)?;
 
         let search_entry_packet = LdapAttribute::new_packet(
             message_id,
@@ -226,5 +214,22 @@ impl Server {
         );
 
         Ok(vec![search_entry_packet, search_done_packet])
+    }
+
+    fn get_message_id(packet: &LdapAttribute) -> Result<i32, LdapError> {
+        Ok(utils::bytes_to_i32(
+            match &packet.value {
+                LdapValue::Primitive(_) => None,
+                LdapValue::Constructed(attributes) => {
+                    attributes.first().and_then(|v| match &v.value {
+                        LdapValue::Primitive(value) => Some(value),
+                        LdapValue::Constructed(_) => None,
+                    })
+                }
+            }
+            .ok_or(LdapError::MalformedPacket(
+                "No message id could be parsed".to_string(),
+            ))?,
+        ))
     }
 }

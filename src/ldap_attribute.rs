@@ -67,7 +67,7 @@ impl LdapAttribute {
                 data_type: UniversalDataType::OctetString,
                 is_constructed: false,
             },
-            LdapValue::Primitive(matched_dn.as_bytes().to_vec()), // eeh..
+            LdapValue::Primitive(matched_dn.as_bytes().to_vec()),
         );
 
         let diagnostic_message_attribute = LdapAttribute::new(
@@ -75,12 +75,12 @@ impl LdapAttribute {
                 data_type: UniversalDataType::OctetString,
                 is_constructed: false,
             },
-            LdapValue::Primitive(diagnostic_message.as_bytes().to_vec()), // eeh..
+            LdapValue::Primitive(diagnostic_message.as_bytes().to_vec()),
         );
 
         LdapAttribute::new(
             Tag::Application {
-                operation: operation,
+                operation,
                 is_constructed: true,
             },
             LdapValue::Constructed(vec![
@@ -129,17 +129,18 @@ impl LdapAttribute {
                 let tag: Tag = tag_byte.into();
 
                 let length: usize = match utils::parse_ber_length_first_byte(
-                    reader
-                        .read_u8()
-                        .await
-                        .map_err(|e| LdapError::NotImplementedYet)?,
+                    reader.read_u8().await.map_err(|e| {
+                        LdapError::ParseError(format!("Failed parsing length from packet: {}", e))
+                    })?,
                 ) {
                     utils::LengthFormat::Long(long_length_bytes_count) => {
                         let mut length_bytes = vec![0; long_length_bytes_count as usize];
-                        reader
-                            .read_exact(&mut length_bytes)
-                            .await
-                            .map_err(|e| LdapError::NotImplementedYet)?;
+                        reader.read_exact(&mut length_bytes).await.map_err(|e| {
+                            LdapError::ParseError(format!(
+                                "Failed parsing long length from packet: {}",
+                                e
+                            ))
+                        })?;
                         utils::parse_ber_length(&length_bytes)
                     }
                     utils::LengthFormat::Short(short_length) => short_length,
@@ -149,7 +150,12 @@ impl LdapAttribute {
                 reader
                     .read_exact(&mut packet_value_bytes)
                     .await
-                    .map_err(|e| LdapError::UnexpectedPacket)?;
+                    .map_err(|e| {
+                        LdapError::ParseError(format!(
+                            "Failed reading value bytes from packet: {}",
+                            e
+                        ))
+                    })?;
 
                 Ok(Some(LdapAttribute {
                     tag,
