@@ -6,7 +6,7 @@ use std::{
 use tokio::{io::AsyncWriteExt, net::TcpListener};
 
 use crate::{
-    ldap_attribute::{LdapAttribute, LdapValue},
+    ldap_attribute::{BindRequest, LdapAttribute, LdapValue},
     ldap_error::LdapError,
     ldap_operation::LdapOperation,
     ldap_result::LdapResult,
@@ -33,7 +33,7 @@ impl Server {
             println!("Got client from {:?}", peer_address);
 
             tokio::spawn(async move {
-                let mut is_client_bound = false;
+                let mut _is_client_bound = false;
 
                 while let Some(request_packet) =
                     LdapAttribute::parse_packet_from_stream(&mut socket)
@@ -51,7 +51,11 @@ impl Server {
                                     is_constructed: _,
                                 } => match operation {
                                     LdapOperation::BindRequest => {
-                                        Self::handle_bind_request(&request_packet)
+                                        Self::handle_bind_request_packet(
+                                            LdapAttribute::try_into_bind_request(&request_packet)
+                                                .unwrap(),
+                                        )
+                                        // Self::handle_bind_request(&request_packet)
                                     }
                                     LdapOperation::UnbindRequest => Ok(Vec::new()),
                                     LdapOperation::SearchRequest => {
@@ -91,6 +95,28 @@ impl Server {
         }
     }
 
+    pub fn handle_bind_request_packet(
+        bind_request: BindRequest,
+    ) -> Result<Vec<LdapAttribute>, LdapError> {
+        let result = if bind_request.name == "fooo" && bind_request.authentication == "ooof" {
+            LdapResult::Success
+        } else {
+            LdapResult::InvalidCredentials
+        };
+
+        let bind_response_packet = LdapAttribute::new_packet(
+            bind_request.message_id,
+            vec![LdapAttribute::new_result_attribute(
+                LdapOperation::BindResponse,
+                result,
+                "",
+                "",
+            )],
+        );
+
+        Ok(vec![bind_response_packet])
+    }
+
     pub fn handle_bind_request(
         request_packet: &LdapAttribute,
     ) -> Result<Vec<LdapAttribute>, LdapError> {
@@ -102,8 +128,8 @@ impl Server {
                 ) = (&bind_attributes[1].value, &bind_attributes[2].value)
                 {
                     Some((
-                        String::from_utf8(username_bytes.clone()).unwrap(),
-                        String::from_utf8(password_bytes.clone()).unwrap(),
+                        std::str::from_utf8(username_bytes).unwrap(),
+                        std::str::from_utf8(password_bytes).unwrap(),
                     ))
                 } else {
                     None

@@ -228,6 +228,52 @@ impl LdapAttribute {
 
         Ok(attributes)
     }
+
+    pub fn try_into_bind_request(request_packet: &LdapAttribute) -> Option<BindRequest> {
+        if let LdapValue::Constructed(attributes) = &request_packet.value {
+            let message_id = attributes
+                .first()
+                .and_then(|v| match &v.value {
+                    LdapValue::Primitive(value) => Some(value),
+                    LdapValue::Constructed(_) => None,
+                })
+                .and_then(|v| Some(utils::bytes_to_i32(v)));
+
+            if let LdapValue::Constructed(bind_attributes) = &attributes[1].value {
+                if let (
+                    LdapValue::Primitive(version_bytes),
+                    LdapValue::Primitive(username_bytes),
+                    LdapValue::Primitive(password_bytes),
+                    Some(message_id),
+                ) = (
+                    &bind_attributes[0].value,
+                    &bind_attributes[1].value,
+                    &bind_attributes[2].value,
+                    message_id,
+                ) {
+                    Some(BindRequest {
+                        message_id,
+                        version: utils::bytes_to_i32(version_bytes),
+                        name: std::str::from_utf8(username_bytes).unwrap(),
+                        authentication: std::str::from_utf8(password_bytes).unwrap(),
+                    })
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+}
+
+pub struct BindRequest<'a> {
+    pub message_id: i32, // this should be shared with other types of messages... hohum
+    pub version: i32,
+    pub name: &'a str,
+    pub authentication: &'a str,
 }
 
 #[cfg(test)]
