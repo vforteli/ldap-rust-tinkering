@@ -46,7 +46,7 @@ pub fn parse_ber_length_first_byte(byte: u8) -> LengthFormat {
 /// Parse ber length long format from remaining bytes
 pub fn parse_ber_length(bytes: &[u8]) -> i32 {
     let mut long_length_bytes: [u8; 4] = [0; 4];
-    long_length_bytes[..bytes.len().into()].copy_from_slice(bytes);
+    long_length_bytes[..bytes.len()].copy_from_slice(bytes);
     i32::from_be_bytes(long_length_bytes)
 }
 
@@ -71,20 +71,19 @@ pub fn ber_length_to_i32(ber_length_bytes: &[u8]) -> BerLengthResult {
 }
 
 pub fn dump_packet(packet: &LdapAttribute) {
-    dump_attribute_recursive(packet, 1)
+    println!("Packet dump:\n------");
+    dump_attribute_recursive(packet, 1);
+    println!("------\n");
 }
 
 fn dump_attribute_recursive(attribute: &LdapAttribute, depth: u8) {
-    let foo: Vec<u8> = Vec::new();
-
     println!(
         "{} tag: {:?}, value: {:?}",
         ">".repeat(depth as usize),
         attribute.tag,
-        if let LdapValue::Primitive(value) = &attribute.value {
-            value
-        } else {
-            &foo
+        match &attribute.value {
+            LdapValue::Primitive(v) => v.as_slice(),
+            LdapValue::Constructed(_) => &[0; 0],
         }
     );
 

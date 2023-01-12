@@ -32,9 +32,8 @@ impl Server {
             let (mut socket, peer_address) = listener.accept().await?;
             println!("Got client from {:?}", peer_address);
 
-            // todo threadpool
             tokio::spawn(async move {
-                let mut _is_client_bound = false;
+                let mut is_client_bound = false;
 
                 while let Some(request_packet) =
                     LdapAttribute::parse_packet_from_stream(&mut socket)
@@ -166,6 +165,33 @@ impl Server {
         Ok(vec![bind_response_packet])
     }
 
+    /*
+    /// <summary>
+        /// Handle search requests
+        /// </summary>
+        /// <param name="searchRequest"></param>
+        /// <returns></returns>
+        private void HandleSearchRequest(NetworkStream stream, LdapPacket requestPacket)
+        {
+            var searchRequest = requestPacket.ChildAttributes.SingleOrDefault(o => o.LdapOperation == LdapOperation.SearchRequest);
+            var filter = searchRequest.ChildAttributes[6];
+
+            if ((LdapFilterChoice)filter.ContextType == LdapFilterChoice.equalityMatch && filter.ChildAttributes[0].GetValue<String>() == "sAMAccountName" && filter.ChildAttributes[1].GetValue<String>() == "testuser") // equalityMatch
+            {
+                var responseEntryPacket = new LdapPacket(requestPacket.MessageId);
+                var searchResultEntry = new LdapAttribute(LdapOperation.SearchResultEntry);
+                searchResultEntry.ChildAttributes.Add(new LdapAttribute(UniversalDataType.OctetString, "cn=testuser,cn=Users,dc=dev,dc=company,dc=com"));
+                searchResultEntry.ChildAttributes.Add(new LdapAttribute(UniversalDataType.Sequence));
+                responseEntryPacket.ChildAttributes.Add(searchResultEntry);
+                var responsEntryBytes = responseEntryPacket.GetBytes();
+                stream.Write(responsEntryBytes, 0, responsEntryBytes.Length);
+            }
+
+            var responseDonePacket = new LdapPacket(requestPacket.MessageId);
+            responseDonePacket.ChildAttributes.Add(new LdapResultAttribute(LdapOperation.SearchResultDone, LdapResult.success));
+            var responseDoneBytes = responseDonePacket.GetBytes();
+            stream.Write(responseDoneBytes, 0, responseDoneBytes.Length);
+        } */
     pub fn handle_search_request(
         request_packet: &LdapAttribute,
     ) -> Result<Vec<LdapAttribute>, LdapError> {
